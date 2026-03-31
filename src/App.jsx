@@ -1,15 +1,8 @@
-import './App.css'
-import DispatchCockpitUI from './DispatchCockpitUI.jsx'
-import { SHIPPED_ORDER_SUMMARY_ORDERS } from './shippedOrders.generated.js'
-import { AGG_TRUCK_ASSIGNMENTS } from './aggTruckAssignments.generated.js'
+import "./App.css";
+import DispatchCockpitLive from "./DispatchCockpitLive.jsx";
 
 function App() {
-  return (
-    <DispatchCockpitUI
-      ordersData={SHIPPED_ORDER_SUMMARY_ORDERS}
-      assignmentData={AGG_TRUCK_ASSIGNMENTS}
-    />
-  )
+  return <DispatchCockpitLive />;
 }
 
-export default App
+export default App;

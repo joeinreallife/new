@@ -1,4 +1,6 @@
-import React, { useMemo, useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { buildDriverAliasBook, formatRegionLabel, getPlantRegionMeta, REGION_ORDER } from "./dispatchMetadata.js";
+import { PlantRibbon } from "./PlantRibbon.jsx";
 
 // Corrected integration from the material requirements PDF.
 // Uses the real plant numbers and names from the report.
@@ -33,7 +35,7 @@ const EMPTY_LOG_ROW = {
 };
 
 const MATERIALS = [
-  { key: "cement", label: "cement" },
+  { key: "cementTypeV", label: "cement / type v" },
   { key: "flyAsh", label: "fly ash" },
   { key: "plc", label: "plc" },
   { key: "lc3", label: "lc3" },
@@ -137,12 +139,47 @@ function normalizeMaterial(material) {
   };
 }
 
+function sumMaterialField(items, field) {
+  const values = items
+    .map((item) => item?.[field])
+    .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+    .map(Number);
+
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
+function combineMaterials(...materials) {
+  const presentMaterials = materials.filter((material) => material?.present);
+  if (!presentMaterials.length) return emptyMaterial();
+
+  const latestMaterial = [...presentMaterials]
+    .filter((material) => material.time)
+    .sort((a, b) => (parse24(b.time) ?? -1) - (parse24(a.time) ?? -1))[0];
+
+  return {
+    present: true,
+    onHand: sumMaterialField(presentMaterials, "onHand"),
+    diff: sumMaterialField(presentMaterials, "diff"),
+    requiredLoads: sumMaterialField(presentMaterials, "requiredLoads"),
+    time: latestMaterial?.time ?? null,
+    finalTons: sumMaterialField(presentMaterials, "finalTons"),
+    finalLoads: sumMaterialField(presentMaterials, "finalLoads"),
+    pdfLoads: sumMaterialField(presentMaterials, "pdfLoads"),
+    blockYards: sumMaterialField(presentMaterials, "blockYards"),
+  };
+}
+
 function normalizePlant(plant) {
+  const regionMeta = getPlantRegionMeta(plant);
   return {
     ...plant,
     maxBlockYards: toNumber(plant.maxBlockYards),
+    region: regionMeta.region,
+    cluster: regionMeta.cluster,
     materials: {
       cement: normalizeMaterial(plant.materials?.cement),
+      typeV: normalizeMaterial(plant.materials?.typeV),
       flyAsh: normalizeMaterial(plant.materials?.flyAsh),
       plc: normalizeMaterial(plant.materials?.plc),
       lc3: normalizeMaterial(plant.materials?.lc3),
@@ -151,10 +188,19 @@ function normalizePlant(plant) {
 }
 
 function getDisplayMaterials(plant) {
-  return MATERIALS.map((item) => ({
-    ...item,
-    material: plant.materials[item.key],
-  }));
+  return MATERIALS.map((item) => {
+    if (item.key === "cementTypeV") {
+      return {
+        ...item,
+        material: combineMaterials(plant.materials.cement, plant.materials.typeV),
+      };
+    }
+
+    return {
+      ...item,
+      material: plant.materials[item.key],
+    };
+  });
 }
 
 function totalRequiredLoads(plant) {
@@ -207,15 +253,6 @@ function plantTone(plant) {
   return "border-slate-200";
 }
 
-function Metric({ label, value }) {
-  return (
-    <div className="rounded-md bg-white/70 px-1.5 py-1">
-      <div className="text-[7px] font-semibold uppercase tracking-[0.14em] opacity-70">{label}</div>
-      <div className="mt-0.5 text-[10px] font-semibold leading-none">{value}</div>
-    </div>
-  );
-}
-
 const PLANT_TILE_STYLE = {
   width: "clamp(156px, 16vw, 188px)",
   minHeight: "148px",
@@ -225,26 +262,6 @@ const SELECTED_PLANT_TILE_STYLE = {
   width: "clamp(320px, 30vw, 420px)",
   minHeight: "360px",
 };
-
-const TILE_PRIMARY_MATERIAL_KEYS = new Set(["cement", "flyAsh"]);
-
-function MaterialMiniCard({ label, material }) {
-  return (
-    <div className={`rounded-xl border p-1.5 ${materialTone(material)}`}>
-      <div className="flex items-center justify-between gap-1.5">
-        <div className="text-[9px] font-semibold uppercase tracking-[0.14em]">{label}</div>
-        <div className="text-[9px] font-semibold">{material.present ? material.time || "-" : "-"}</div>
-      </div>
-
-      <div className="mt-1.5 grid grid-cols-2 gap-1">
-        <Metric label="on hand" value={material.present ? fmt(material.onHand, 2) : "-"} />
-        <Metric label="diff" value={material.present ? fmtSigned(material.diff, 2) : "-"} />
-        <Metric label="req loads" value={material.present ? fmt(material.requiredLoads, 2) : "-"} />
-        <Metric label="tons" value={material.present ? fmt(material.finalTons, 2) : "-"} />
-      </div>
-    </div>
-  );
-}
 
 function PlantTile({ plant, selected, onClick }) {
   const materials = getDisplayMaterials(plant);
@@ -263,6 +280,7 @@ function PlantTile({ plant, selected, onClick }) {
       }}
       role="button"
       tabIndex={0}
+      data-plant-id={plant.id}
       style={selected ? SELECTED_PLANT_TILE_STYLE : PLANT_TILE_STYLE}
       className={`shrink-0 snap-start rounded-2xl border bg-white p-1.5 text-left shadow-sm transition ${plantTone(plant)} ${selected ? "ring-2 ring-slate-900/20" : "hover:border-slate-300"}`}
     >
@@ -270,6 +288,16 @@ function PlantTile({ plant, selected, onClick }) {
         <div className="min-w-0">
           <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">plt {plant.id}</div>
           <div className="truncate text-[13px] font-semibold lowercase text-slate-900">{plant.name}</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            <div className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+              {formatRegionLabel(plant.region)}
+            </div>
+            {plant.cluster && (
+              <div className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                {formatRegionLabel(plant.cluster)}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className={`rounded-lg px-1.5 py-1 text-[9px] font-semibold ${urgentCount(plant) > 0 ? "bg-red-100 text-red-700" : watchCount(plant) > 0 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
@@ -303,6 +331,8 @@ function PlantTile({ plant, selected, onClick }) {
             <div className="grid grid-cols-2 gap-1.5">
               <div>report date <span className="font-semibold text-slate-900">{plant.reportDate}</span></div>
               <div>done/out <span className="font-semibold text-slate-900">{latestUpdatedLabel(plant)}</span></div>
+              <div>region <span className="font-semibold text-slate-900">{formatRegionLabel(plant.region)}</span></div>
+              <div>cluster <span className="font-semibold text-slate-900">{plant.cluster ? formatRegionLabel(plant.cluster) : "-"}</span></div>
               <div>loads needed <span className="font-semibold text-slate-900">{fmt(totalRequiredLoads(plant), 2)}</span></div>
               <div>urgent mats <span className="font-semibold text-slate-900">{urgentCount(plant)}</span></div>
             </div>
@@ -338,32 +368,42 @@ export default function DispatchCockpitUI({
   assignmentData = SAMPLE_ASSIGNMENTS,
   sourceAllocationsData = SAMPLE_SOURCE_ALLOCATIONS,
   initialLogs = SAMPLE_LOGS,
+  dataStatus = null,
 }) {
   const plants = useMemo(() => {
     return (plantsData || []).map(normalizePlant).sort((a, b) => a.id - b.id);
   }, [plantsData]);
 
   const [query, setQuery] = useState("");
+  const [selectedRegion, setSelectedRegion] = useState("all");
   const [criticalOnly, setCriticalOnly] = useState(false);
   const [activeOnly, setActiveOnly] = useState(false);
   const [urgentOnly, setUrgentOnly] = useState(false);
   const [selectedPlantId, setSelectedPlantId] = useState(plants[0]?.id ?? null);
-  const [showPlantStrip, setShowPlantStrip] = useState(true);
+  const [showLeftRail, setShowLeftRail] = useState(true);
   const [showPlantLog, setShowPlantLog] = useState(true);
   const [plantLogs, setPlantLogs] = useState(() => cloneLogs(initialLogs));
+
+  const regionCounts = useMemo(() => {
+    return plants.reduce((counts, plant) => {
+      counts[plant.region] = (counts[plant.region] || 0) + 1;
+      return counts;
+    }, {});
+  }, [plants]);
 
   const filteredPlants = useMemo(() => {
     return plants.filter((plant) => {
       const q = query.trim().toLowerCase();
-      const searchText = `${plant.id} ${plant.name}`.toLowerCase();
+      const searchText = `${plant.id} ${plant.name} ${plant.region} ${plant.cluster || ""}`.toLowerCase();
       const isUrgent = urgentCount(plant) > 0;
       if (q && !searchText.includes(q)) return false;
+      if (selectedRegion !== "all" && plant.region !== selectedRegion) return false;
       if (activeOnly && !isActivePlant(plant)) return false;
       if (urgentOnly && !isUrgent) return false;
       if (criticalOnly && !isUrgent) return false;
       return true;
     });
-  }, [plants, query, criticalOnly, activeOnly, urgentOnly]);
+  }, [plants, query, selectedRegion, criticalOnly, activeOnly, urgentOnly]);
 
   useEffect(() => {
     if (!filteredPlants.length) {
@@ -418,6 +458,10 @@ export default function DispatchCockpitUI({
         }))
       : [];
   }, [assignmentData]);
+
+  const driverAliases = useMemo(() => {
+    return buildDriverAliasBook(assignments);
+  }, [assignments]);
 
   const sourceAllocations = useMemo(() => {
     const rows = Array.isArray(sourceAllocationsData) && sourceAllocationsData.length
@@ -487,7 +531,7 @@ export default function DispatchCockpitUI({
 
       rows.push({
         key,
-        driver: item.driver || item.name || "-",
+        driver: driverAliases.labelForAssignment(item),
         truck: truck || "-",
         status: match ? "assigned" : truck ? "available" : "no truck",
         plantId: match?.plantId ?? null,
@@ -498,7 +542,7 @@ export default function DispatchCockpitUI({
       const weight = (status) => (status === "no truck" ? 0 : status === "assigned" ? 1 : 2);
       return weight(a.status) - weight(b.status) || a.driver.localeCompare(b.driver);
     });
-  }, [activeLogEntries, assignments]);
+  }, [activeLogEntries, assignments, driverAliases]);
 
   const displayDriverRoster = useMemo(() => {
     return driverRoster;
@@ -519,8 +563,28 @@ export default function DispatchCockpitUI({
     if (!normalized) return null;
 
     const matches = assignments.filter((item) => normText(item[field]) === normalized);
+    if (matches.length === 1) return matches[0];
+
+    if (field === "driver") {
+      const aliasMatches = assignments.filter(
+        (item) => normText(driverAliases.get(item.driver, item.name)) === normalized
+      );
+      return aliasMatches.length === 1 ? aliasMatches[0] : null;
+    }
+
     return matches.length === 1 ? matches[0] : null;
   }
+
+  useEffect(() => {
+    setPlantLogs(cloneLogs(initialLogs));
+  }, [initialLogs]);
+
+  useEffect(() => {
+    setSelectedPlantId((current) => {
+      if (!plants.length) return null;
+      return plants.some((plant) => plant.id === current) ? current : plants[0].id;
+    });
+  }, [plants]);
 
   function updateLogCell(rowIndex, field, value) {
     if (!selectedPlant) return;
@@ -572,6 +636,11 @@ export default function DispatchCockpitUI({
       };
     });
   }
+
+  const dataStatusTone =
+    dataStatus?.tone === "sample"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : "border-slate-200 bg-slate-50 text-slate-600";
 
   return (
     <>
@@ -666,10 +735,11 @@ export default function DispatchCockpitUI({
           border: 2px solid #18181b;
         }
       `}</style>
-      <div className="dark-cockpit min-h-screen bg-black p-4 text-white">
-      <div className="mx-auto grid max-w-[1800px] gap-3 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <div className="xl:sticky xl:top-4 xl:self-start">
-          <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
+      <div className="dark-cockpit h-screen overflow-hidden bg-black p-4 text-white">
+      <div className={`mx-auto grid h-full max-w-[1800px] gap-3 ${showLeftRail ? "xl:grid-cols-[280px_minmax(0,1fr)]" : "xl:grid-cols-[minmax(0,1fr)]"}`}>
+        {showLeftRail ? (
+        <div className="min-h-0">
+          <div className="flex h-full min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
             <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
               <div className="grid grid-cols-[1fr_0.65fr_0.8fr] bg-slate-50 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 <div>driver</div>
@@ -726,7 +796,7 @@ export default function DispatchCockpitUI({
               </div>
             </div>
 
-            <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
+            <div className="mt-2 min-h-0 overflow-hidden rounded-xl border border-slate-200">
               <div className="grid grid-cols-[1.2fr_0.7fr_0.5fr_0.5fr_0.6fr] bg-slate-50 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 <div>source</div>
                 <div className="text-right">alloc</div>
@@ -735,7 +805,7 @@ export default function DispatchCockpitUI({
                 <div className="text-right">left</div>
               </div>
 
-              <div className="divide-y divide-slate-200">
+              <div className="min-h-0 divide-y divide-slate-200 overflow-auto">
                 {displaySourceAllocations.length > 0 ? (
                   displaySourceAllocations.map((row) => (
                     <div
@@ -758,10 +828,24 @@ export default function DispatchCockpitUI({
             </div>
           </div>
         </div>
+        ) : null}
 
-      <div className="flex min-w-0 flex-col gap-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-end gap-3">
+      <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden">
+        <div className="shrink-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <button
+                onClick={() => setShowLeftRail((value) => !value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-600"
+              >
+                {showLeftRail ? "hide side tiles" : "open side tiles"}
+              </button>
+              {dataStatus && (
+                <div className={`max-w-full rounded-xl border px-3 py-2 text-xs ${dataStatusTone}`}>
+                  {dataStatus.label}
+                </div>
+              )}
+            </div>
 
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">plants {summary.total}</div>
@@ -771,11 +855,15 @@ export default function DispatchCockpitUI({
             </div>
           </div>
 
+          {dataStatus?.detail && (
+            <div className="mt-2 text-xs text-slate-500">{dataStatus.detail}</div>
+          )}
+
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="search plant"
+              placeholder="search plant or region"
               className="min-w-[220px] flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
             />
 
@@ -800,90 +888,54 @@ export default function DispatchCockpitUI({
               critical only
             </button>
           </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setSelectedRegion("all")}
+              className={`rounded-xl px-3 py-2 text-sm font-medium ${selectedRegion === "all" ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}
+            >
+              all regions
+            </button>
+            {REGION_ORDER.map((region) => (
+              <button
+                key={region}
+                onClick={() => setSelectedRegion(region)}
+                className={`rounded-xl px-3 py-2 text-sm font-medium ${selectedRegion === region ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}
+              >
+                {formatRegionLabel(region)} {regionCounts[region] || 0}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {showPlantStrip ? (
-          <div className="plant-strip-panel rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">shown plants {filteredPlants.length}</div>
-                {selectedPlant && (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                    selected plt {selectedPlant.id}
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={() => setShowPlantStrip(false)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-600"
-              >
-                close
-              </button>
-            </div>
-
-            <div className="overflow-x-auto overflow-y-hidden pb-1">
-              <div className="flex min-w-max snap-x snap-mandatory items-start gap-3 pr-3">
-                {filteredPlants.map((plant) => (
-                <PlantTile
-                  key={plant.id}
-                  plant={plant}
-                  selected={selectedPlant?.id === plant.id}
-                  onClick={() => setSelectedPlantId((current) => (current === plant.id ? null : plant.id))}
-                />
-              ))}
-
-                {filteredPlants.length === 0 && (
-                  <div
-                    style={PLANT_TILE_STYLE}
-                    className="flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-center text-slate-500"
-                  >
-                    <div>
-                      <div className="text-lg font-semibold text-slate-700">nothing matched</div>
-                      <div className="mt-1 text-sm">clear search or loosen filters.</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="plant-strip-panel rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">shown plants {filteredPlants.length}</div>
-                {selectedPlant && (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                    selected plt {selectedPlant.id}
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={() => setShowPlantStrip(true)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-600"
-              >
-                open
-              </button>
-            </div>
-          </div>
-        )}
+        <PlantRibbon
+          filteredPlants={filteredPlants}
+          selectedPlant={selectedPlant}
+          setSelectedPlantId={setSelectedPlantId}
+          PlantTile={PlantTile}
+        />
 
         {selectedPlant && (showPlantLog ? (
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">plant log</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">driver log</div>
                 <div className="mt-1 text-base font-semibold text-slate-900">plt {selectedPlant.id} {selectedPlant.name}</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {formatRegionLabel(selectedPlant.region)}
+                  {selectedPlant.cluster ? ` - ${formatRegionLabel(selectedPlant.cluster)}` : ""}
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                  entries {selectedLogs.length}
+                  driver rows {selectedLogs.length}
                 </div>
                 <button
                   onClick={addLogRow}
                   className="rounded-xl bg-slate-900 px-3 py-2 text-sm text-white"
                 >
-                  add row
+                  add driver row
                 </button>
                 <button
                   onClick={() => setShowPlantLog(false)}
@@ -894,7 +946,7 @@ export default function DispatchCockpitUI({
               </div>
             </div>
 
-            <div className="max-h-[340px] overflow-auto">
+            <div className="min-h-0 flex-1 overflow-auto">
               <div className="min-w-[1100px]">
                 <div className="grid grid-cols-[120px_140px_210px_210px_150px_120px_120px_70px] border-b border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                   <div>Truck #</div>
@@ -968,12 +1020,12 @@ export default function DispatchCockpitUI({
                   ))
                 ) : (
                   <div className="flex items-center justify-between gap-3 px-4 py-6 text-sm text-slate-500">
-                    <div>no log rows yet for this plant.</div>
+                    <div>no driver rows yet for this plant.</div>
                     <button
                       onClick={addLogRow}
                       className="rounded-xl bg-slate-900 px-3 py-2 text-sm text-white"
                     >
-                      add first row
+                      add first driver row
                     </button>
                   </div>
                 )}
@@ -981,7 +1033,11 @@ export default function DispatchCockpitUI({
                 <datalist id="driver-options">
                   {assignmentOptions.drivers.map((driver) => {
                     const match = assignments.find((item) => item.driver === driver);
-                    const label = [match?.name, match?.location].filter(Boolean).join(" · ");
+                    const label = [
+                      driverAliases.get(driver, match?.name),
+                      match?.name,
+                      match?.location,
+                    ].filter(Boolean).join(" - ");
 
                     return <option key={driver} value={driver} label={label} />;
                   })}
@@ -990,7 +1046,10 @@ export default function DispatchCockpitUI({
                 <datalist id="name-options">
                   {assignmentOptions.names.map((name) => {
                     const match = assignments.find((item) => item.name === name);
-                    const label = [match?.driver, match?.location].filter(Boolean).join(" · ");
+                    const label = [
+                      driverAliases.get(match?.driver, name),
+                      match?.location,
+                    ].filter(Boolean).join(" - ");
 
                     return <option key={name} value={name} label={label} />;
                   })}
@@ -999,7 +1058,11 @@ export default function DispatchCockpitUI({
                 <datalist id="location-options">
                   {assignmentOptions.locations.map((location) => {
                     const match = assignments.find((item) => item.location === location);
-                    const label = [match?.locationCode, match?.driver, match?.name].filter(Boolean).join(" · ");
+                    const label = [
+                      match?.locationCode,
+                      driverAliases.get(match?.driver, match?.name),
+                      match?.name,
+                    ].filter(Boolean).join(" - ");
 
                     return <option key={location} value={location} label={label} />;
                   })}
@@ -1011,8 +1074,12 @@ export default function DispatchCockpitUI({
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">plant log</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">driver log</div>
                 <div className="mt-1 text-base font-semibold text-slate-900">plt {selectedPlant.id} {selectedPlant.name}</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {formatRegionLabel(selectedPlant.region)}
+                  {selectedPlant.cluster ? ` - ${formatRegionLabel(selectedPlant.cluster)}` : ""}
+                </div>
               </div>
               <button
                 onClick={() => setShowPlantLog(true)}

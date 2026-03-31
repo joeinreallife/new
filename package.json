@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "web:start": "npm run build && node server.mjs",
+    "share:live": "concurrently -k \"npm run web:start\" \"wait-on tcp:127.0.0.1:8787 && npx localtunnel --port 8787\"",
     "desktop:dev": "concurrently -k \"vite --host 127.0.0.1 --port 4173\" \"wait-on tcp:127.0.0.1:4173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:4173 electron .\"",
     "desktop:start": "npm run build && electron .",
     "desktop:build": "npm run build && electron-packager . \"Dispatch Cockpit\" --platform=win32 --arch=x64 --out=release --overwrite --prune=true --ignore=\"^/release$\" --ignore=\"^/src$\" --ignore=\"^/public$\" --ignore=\"^/scripts$\"",
