@@ -274,6 +274,61 @@ function formatRiskFlags(riskStatus) {
   return flags;
 }
 
+function compareMaterialPriority(left, right) {
+  const diffGap = (left.diff ?? Number.POSITIVE_INFINITY) - (right.diff ?? Number.POSITIVE_INFINITY);
+  if (diffGap !== 0) return diffGap;
+  return (right.requiredLoads ?? 0) - (left.requiredLoads ?? 0);
+}
+
+function buildPlantDecision(plant) {
+  const rows = materialRowsForDisplay(plant.materials);
+  const urgentRows = rows
+    .filter((row) => row.diff !== null && row.diff < 0)
+    .sort(compareMaterialPriority);
+
+  if (urgentRows.length > 0) {
+    const row = urgentRows[0];
+    const materialLabel = MATERIAL_USAGE_LABELS[row.key] ?? row.label;
+    return {
+      plantId: plant.id,
+      plant,
+      mode: "act_now",
+      severity: row.diff <= -1 || (row.requiredLoads ?? 0) > 0 ? "critical" : "attention",
+      materialKey: row.key,
+      materialLabel,
+      actionLabel: `Protect ${materialLabel} at Plant ${plant.id}`,
+      reason: `Diff ${formatDiff(row.diff)} and required loads ${formatNumber(row.requiredLoads, 2)}`,
+      support: `On hand ${formatNumber(row.onHand, 2)} | current loads ${formatNumber(row.loads, 2)}`,
+      byTime: cleanText(row.time) || getPlantStartTime(plant),
+      score: Math.abs(row.diff ?? 0) * 100 + (row.requiredLoads ?? 0) * 10,
+    };
+  }
+
+  const watchRows = rows
+    .filter((row) => row.diff !== null && row.diff >= 0 && row.diff <= 2)
+    .sort(compareMaterialPriority);
+
+  if (watchRows.length > 0) {
+    const row = watchRows[0];
+    const materialLabel = MATERIAL_USAGE_LABELS[row.key] ?? row.label;
+    return {
+      plantId: plant.id,
+      plant,
+      mode: "watch",
+      severity: row.diff <= 0.75 ? "tight" : "watch",
+      materialKey: row.key,
+      materialLabel,
+      actionLabel: `Watch ${materialLabel} at Plant ${plant.id}`,
+      reason: `Diff ${formatDiff(row.diff)} with on hand ${formatNumber(row.onHand, 2)}`,
+      support: `Stay ahead of start time ${cleanText(row.time) || getPlantStartTime(plant)}`,
+      byTime: cleanText(row.time) || getPlantStartTime(plant),
+      score: (2 - (row.diff ?? 0)) * 50 + (row.requiredLoads ?? 0) * 10,
+    };
+  }
+
+  return null;
+}
+
 function hasAnyMaterialData(materials) {
   return MATERIAL_KEYS.some((key) => hasMaterialSlotData(materials?.[key]));
 }
@@ -661,6 +716,74 @@ function MaterialSnapshot({ materials }) {
   );
 }
 
+function DecisionCard({ item, selected, onSelect }) {
+  const toneClass =
+    item.severity === "critical"
+      ? "border-rose-500/50 bg-rose-500/10"
+      : item.mode === "act_now"
+        ? "border-amber-400/40 bg-amber-400/10"
+        : "border-sky-400/35 bg-sky-400/10";
+  const badgeLabel =
+    item.mode === "act_now"
+      ? item.severity === "critical"
+        ? "Act now"
+        : "Attention"
+      : item.severity === "tight"
+        ? "Tight"
+        : "Watch";
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item.plantId)}
+      className={`border p-4 text-left transition ${
+        selected ? "border-white bg-white/[0.05]" : "border-white/15 bg-white/[0.02] hover:border-white/35"
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-white">Plant {item.plantId}</div>
+        <div className={`border px-2 py-1 text-[11px] font-semibold text-white ${toneClass}`}>
+          {badgeLabel}
+        </div>
+      </div>
+      <div className="mt-2 text-[15px] font-semibold text-white">{item.actionLabel}</div>
+      <div className="mt-2 text-sm text-white/80">{item.reason}</div>
+      <div className="mt-1 text-[12px] text-white/55">{item.support}</div>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-[12px] text-white/60">
+        <div>{formatRegionLabel(item.plant.region)}</div>
+        <div>yardage {formatNumber(item.plant.yardage, 1)}</div>
+        <div>by {item.byTime}</div>
+      </div>
+    </button>
+  );
+}
+
+function DecisionQueueSection({ title, items, selectedPlantId, onSelectPlant, emptyLabel }) {
+  return (
+    <CliSection
+      title={title}
+      right={<div className="text-sm text-white/60">{items.length} plants</div>}
+    >
+      {items.length === 0 ? (
+        <div className="border border-dashed border-white/25 p-4 text-sm text-white">
+          {emptyLabel}
+        </div>
+      ) : (
+        <div className="grid gap-3 xl:grid-cols-2">
+          {items.map((item) => (
+            <DecisionCard
+              key={`${item.mode}_${item.plantId}_${item.materialKey}`}
+              item={item}
+              selected={selectedPlantId === item.plantId}
+              onSelect={onSelectPlant}
+            />
+          ))}
+        </div>
+      )}
+    </CliSection>
+  );
+}
+
 function PlantTile({ plant, selected, onClick }) {
   const cement = plant.materials?.cement ?? emptyMaterialSlot();
   const flyash = plant.materials?.flyash ?? emptyMaterialSlot();
@@ -810,7 +933,7 @@ function PlantRibbon({
 
   return (
     <CliSection
-      title="Plants"
+      title="All plants"
       right={
         <div className="flex flex-col gap-3 sm:items-end">
           <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
@@ -1012,7 +1135,21 @@ function PlantDetailsPanel({
   onOpenDriverLogPage,
   onClose,
 }) {
-  if (!plant) return null;
+  if (!plant) {
+    return (
+      <div className="self-start xl:sticky xl:top-6 xl:z-10">
+        <CliSection title="Selected plant">
+          <div className="space-y-3 text-sm text-white/75">
+            <div className="border border-dashed border-white/25 p-4">
+              Pick a plant from <span className="text-white">Act now</span>,{" "}
+              <span className="text-white">Watch next</span>, or{" "}
+              <span className="text-white">All plants</span> to open the decision detail.
+            </div>
+          </div>
+        </CliSection>
+      </div>
+    );
+  }
 
   const materialRows = materialRowsForDisplay(plant.materials);
   const negativeDiffCount = materialRows.filter((row) => row.diff !== null && row.diff < 0).length;
@@ -1020,6 +1157,10 @@ function PlantDetailsPanel({
   const detailDraft =
     driverLogDraft.plantId === plant.id ? driverLogDraft : createDriverLogDraft(plant.id);
   const saveDisabled = !hasDriverLogDraftContent(detailDraft);
+  const decision = buildPlantDecision(plant);
+  const riskFlags = formatRiskFlags(getPlantRiskStatus(plant));
+  const areaLabel = formatRegionLabel(plant.region);
+  const startTime = getPlantStartTime(plant);
 
   return (
     <div className="self-start xl:sticky xl:top-6 xl:z-10">
@@ -1027,6 +1168,7 @@ function PlantDetailsPanel({
         title={`Plant ${plant.id}`}
         right={
           <div className="flex items-center gap-2">
+            <div className="border border-white/15 px-3 py-2 text-white/80">{areaLabel}</div>
             <div className="border border-white/15 px-3 py-2 text-white/80">
               Yardage {formatNumber(plant.yardage, 1)}
             </div>
@@ -1036,7 +1178,40 @@ function PlantDetailsPanel({
         }
       >
         <div className="max-h-[calc(100vh-250px)] space-y-6 overflow-y-auto pr-1">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="border border-white/15 bg-white/[0.02] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[12px] font-medium text-white">Recommended action</div>
+              <div className="text-[11px] text-white/55">decision summary</div>
+            </div>
+            {decision ? (
+              <>
+                <div className="mt-3 text-lg font-semibold text-white">{decision.actionLabel}</div>
+                <div className="mt-2 text-sm text-white/80">{decision.reason}</div>
+                <div className="mt-1 text-sm text-white/60">{decision.support}</div>
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-[12px] text-white/55">
+                  <div>Area {areaLabel}</div>
+                  <div>By {decision.byTime}</div>
+                  <div>Risk {riskFlags.length > 0 ? riskFlags.join(" / ") : "stable"}</div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mt-3 text-lg font-semibold text-white">No immediate action</div>
+                <div className="mt-2 text-sm text-white/70">
+                  This plant is currently stable based on the loaded material numbers.
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-[12px] text-white/55">
+                  <div>Area {areaLabel}</div>
+                  <div>Start {startTime}</div>
+                  <div>Keep watching material requirements</div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <Metric label="Area" value={areaLabel} />
+            <Metric label="Start time" value={startTime} />
             <Metric label="Yardage" value={formatNumber(plant.yardage, 1)} />
             <Metric label="Materials shown" value={materialRows.length} />
             <Metric label="Negative diffs" value={negativeDiffCount} />
@@ -1361,6 +1536,24 @@ export default function DispatchCockpitLive() {
   );
   const riskPlantCount = riskPlants.length;
 
+  const actNowDecisions = useMemo(
+    () =>
+      filteredPlants
+        .map((plant) => buildPlantDecision(plant))
+        .filter((decision) => decision?.mode === "act_now")
+        .sort((left, right) => right.score - left.score),
+    [filteredPlants],
+  );
+
+  const watchDecisions = useMemo(
+    () =>
+      filteredPlants
+        .map((plant) => buildPlantDecision(plant))
+        .filter((decision) => decision?.mode === "watch")
+        .sort((left, right) => right.score - left.score),
+    [filteredPlants],
+  );
+
   const driverOptions = useMemo(
     () => ({
       locations: uniqueCleanValues(drivers.map((driver) => driver.location)),
@@ -1571,6 +1764,23 @@ export default function DispatchCockpitLive() {
 
         {page === "cockpit" ? (
           <div className="flex flex-col gap-4">
+            <div className="grid gap-4 xl:grid-cols-2">
+              <DecisionQueueSection
+                title="Act now"
+                items={actNowDecisions}
+                selectedPlantId={selectedPlantId}
+                onSelectPlant={setSelectedPlantId}
+                emptyLabel="No plants currently need immediate action."
+              />
+              <DecisionQueueSection
+                title="Watch next"
+                items={watchDecisions}
+                selectedPlantId={selectedPlantId}
+                onSelectPlant={setSelectedPlantId}
+                emptyLabel="No near-term watch items in the current filter."
+              />
+            </div>
+
             <PlantRibbon
               filteredPlants={filteredPlants}
               selectedPlant={selectedPlant}
