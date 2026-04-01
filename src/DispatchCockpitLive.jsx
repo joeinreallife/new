@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { formatRegionLabel, getPlantRegionMeta, REGION_ORDER } from "./dispatchMetadata.js";
 import { SOURCE_FILES } from "./sourceFiles.js";
@@ -539,6 +539,24 @@ function getPlantStartTime(plant) {
   return times[0]?.label ?? "-";
 }
 
+function formatMaterialUsageValue(materialKey, materials) {
+  if (!hasMaterialSlotData(materials?.[materialKey])) return "-";
+  return formatNumber(MATERIAL_USAGE_PLACEHOLDERS[materialKey] ?? 0, 2);
+}
+
+function materialUsageRows(materials) {
+  return MATERIAL_KEYS.filter((key) => hasMaterialSlotData(materials?.[key])).map((key) => ({
+    key,
+    label: MATERIAL_USAGE_LABELS[key] ?? MATERIAL_LABELS[key] ?? key,
+    value: formatMaterialUsageValue(key, materials),
+  }));
+}
+
+function formatMaterialUsageSummary(materials) {
+  const rows = materialUsageRows(materials);
+  return rows.length > 0 ? rows.map((row) => `${row.label} ${row.value}`).join(" | ") : "-";
+}
+
 function buildAggDriverRows(aggBuffer) {
   if (!aggBuffer) return DEMO_DRIVERS;
 
@@ -661,100 +679,7 @@ function MaterialSnapshot({ materials }) {
   );
 }
 
-function PlantTile({ plant, selected, onClick }) {
-  const cement = plant.materials?.cement ?? emptyMaterialSlot();
-  const flyash = plant.materials?.flyash ?? emptyMaterialSlot();
-  const riskStatus = getPlantRiskStatus(plant);
-  const riskFlags = formatRiskFlags(riskStatus);
-  const startTime = getPlantStartTime(plant);
-  const usageMaterials = materialRowsForDisplay(plant.materials);
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-[336px] shrink-0 overflow-hidden border p-4 text-left transition ${
-        selected
-          ? "border-white bg-white/[0.04]"
-          : "border-white/15 bg-white/[0.02] hover:border-white/35"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] text-white/50">Plant {plant.id}</div>
-          <div className="mt-1 text-[11px] text-white/60">Start time {startTime}</div>
-          <div className="mt-2 border border-white/10 bg-white/[0.02] px-2 py-2">
-            <div className="text-[11px] text-white/50">Material usage</div>
-            <div className="mt-1 space-y-1 text-[11px] text-white/70">
-              {usageMaterials.length > 0 ? (
-                usageMaterials.map((row) => (
-                  <div key={row.key}>
-                    {MATERIAL_USAGE_LABELS[row.key] ?? row.label}:{" "}
-                    {formatNumber(MATERIAL_USAGE_PLACEHOLDERS[row.key] ?? 0, 2)}
-                  </div>
-                ))
-              ) : (
-                <div>-</div>
-              )}
-            </div>
-          </div>
-          {riskFlags.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {riskFlags.map((flag) => (
-                <span
-                  key={flag}
-                  className="inline-flex min-w-6 items-center justify-center border border-rose-500/50 bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-300"
-                >
-                  {flag}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-2 text-[11px] text-emerald-300/80">stable</div>
-          )}
-        </div>
-
-        <div className="text-right">
-          <div className="text-[11px] text-white/50">Yardage</div>
-          <div className="mt-1 text-3xl font-semibold leading-none text-white">
-            {formatNumber(plant.yardage, 1)}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-2 border-t border-white/10 pt-3">
-        <div className="grid grid-cols-[24px_minmax(0,1fr)_auto_auto] items-center gap-2 text-sm text-white">
-          <div className="font-semibold text-white/75">C</div>
-          <div className="text-white/60">on hand</div>
-          <div>{formatNumber(cement.onHand, 2)}</div>
-          <div className={riskStatus.cementRisk ? "font-semibold text-rose-300" : "text-white/70"}>
-            req {formatNumber(cement.requiredLoads, 2)}
-          </div>
-        </div>
-        <div className="grid grid-cols-[24px_minmax(0,1fr)_auto_auto] items-center gap-2 text-sm text-white">
-          <div className="font-semibold text-white/75">F</div>
-          <div className="text-white/60">on hand</div>
-          <div>{formatNumber(flyash.onHand, 2)}</div>
-          <div className={riskStatus.flyashRisk ? "font-semibold text-rose-300" : "text-white/70"}>
-            req {formatNumber(flyash.requiredLoads, 2)}
-          </div>
-        </div>
-        {(riskStatus.cementRisk || riskStatus.flyashRisk) && (
-          <div className="pt-1 text-[11px] text-rose-300">
-            negative diff on {riskFlags.join(" / ")}
-          </div>
-        )}
-        {!riskStatus.cementRisk && !riskStatus.flyashRisk && (
-          <div className="pt-1 text-[11px] text-white/50">
-            no cement or flyash shortage flagged
-          </div>
-        )}
-      </div>
-    </button>
-  );
-}
-
-function PlantRibbon({
+function PlantBoardSection({
   filteredPlants,
   selectedPlant,
   setSelectedPlantId,
@@ -765,117 +690,141 @@ function PlantRibbon({
   selectedRegion,
   setSelectedRegion,
 }) {
-  const plantStripRef = useRef(null);
-  const [plantStripMetrics, setPlantStripMetrics] = useState({
-    scrollLeft: 0,
-    maxScrollLeft: 0,
-  });
-
-  function syncPlantStripMetrics() {
-    const strip = plantStripRef.current;
-    if (!strip) return;
-    setPlantStripMetrics({
-      scrollLeft: strip.scrollLeft,
-      maxScrollLeft: Math.max(0, strip.scrollWidth - strip.clientWidth),
-    });
-  }
-
-  function scrollPlantStripBy(direction) {
-    const strip = plantStripRef.current;
-    if (!strip) return;
-    const travel = Math.max(280, Math.round(strip.clientWidth * 0.72));
-    strip.scrollBy({ left: direction * travel, behavior: "smooth" });
-  }
-
-  useEffect(() => {
-    syncPlantStripMetrics();
-  }, [filteredPlants.length]);
-
-  useEffect(() => {
-    const strip = plantStripRef.current;
-    if (!strip) return undefined;
-    const handleScroll = () => syncPlantStripMetrics();
-    const handleResize = () => syncPlantStripMetrics();
-    strip.addEventListener("scroll", handleScroll, { passive: true });
-    window.addEventListener("resize", handleResize);
-    return () => {
-      strip.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("resize", handleResize);
-    };
-  }, [filteredPlants.length]);
-
-  const canScrollPlantPrev = plantStripMetrics.scrollLeft > 0;
-  const canScrollPlantNext =
-    plantStripMetrics.scrollLeft < plantStripMetrics.maxScrollLeft - 1;
-
   return (
     <CliSection
-      title="Plants"
+      title="Plant Board"
       right={
-        <div className="flex flex-col gap-3 sm:items-end">
-          <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
-            <div>{filteredPlants.length} shown</div>
-            {selectedPlant ? <div>selected {selectedPlant.id}</div> : null}
-            <CliButton onClick={() => scrollPlantStripBy(-1)} disabled={!canScrollPlantPrev}>
-              Prev
-            </CliButton>
-            <CliButton onClick={() => scrollPlantStripBy(1)} disabled={!canScrollPlantNext}>
-              Next
-            </CliButton>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="inline-flex items-center gap-2 border border-white/15 px-3 py-2 text-sm text-white/85">
-              <input
-                type="checkbox"
-                checked={activeOnly}
-                onChange={(event) => setActiveOnly(event.target.checked)}
-              />
-              <span>Active plants only</span>
-            </label>
-            <label className="flex min-w-[220px] items-center gap-2 border border-white/15 px-3 py-2 text-sm text-white/85">
-              <span className="text-white/55">Search plant ID</span>
-              <input
-                type="text"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Plant id"
-                className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/35"
-              />
-            </label>
-            <label className="flex items-center gap-2 border border-white/15 px-3 py-2 text-sm text-white/85">
-              <span className="text-white/55">Area</span>
-              <select
-                value={selectedRegion}
-                onChange={(event) => setSelectedRegion(event.target.value)}
-                className="bg-black text-sm text-white outline-none"
-              >
-                <option value="all">All areas</option>
-                {REGION_ORDER.map((region) => (
-                  <option key={region} value={region}>
-                    {formatRegionLabel(region)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
+          <div>{filteredPlants.length} rows</div>
+          {selectedPlant ? <div>selected {selectedPlant.id}</div> : null}
         </div>
       }
     >
-      <div ref={plantStripRef} className="overflow-x-auto overflow-y-hidden pb-1">
-        <div className="flex min-w-max gap-3 pr-3">
-          {filteredPlants.map((plant) => (
-            <PlantTile
-              key={plant.id}
-              plant={plant}
-              selected={selectedPlant?.id === plant.id}
-              onClick={() =>
-                setSelectedPlantId((current) => (current === plant.id ? null : plant.id))
-              }
-            />
-          ))}
-        </div>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <label className="inline-flex items-center gap-2 border border-white/15 px-3 py-2 text-sm text-white/85">
+          <input
+            type="checkbox"
+            checked={activeOnly}
+            onChange={(event) => setActiveOnly(event.target.checked)}
+          />
+          <span>Active plants only</span>
+        </label>
+        <label className="flex min-w-[220px] items-center gap-2 border border-white/15 px-3 py-2 text-sm text-white/85">
+          <span className="text-white/55">Search plant ID</span>
+          <input
+            type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Plant id"
+            className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+          />
+        </label>
+        <label className="flex items-center gap-2 border border-white/15 px-3 py-2 text-sm text-white/85">
+          <span className="text-white/55">Area</span>
+          <select
+            value={selectedRegion}
+            onChange={(event) => setSelectedRegion(event.target.value)}
+            className="bg-black text-sm text-white outline-none"
+          >
+            <option value="all">All areas</option>
+            {REGION_ORDER.map((region) => (
+              <option key={region} value={region}>
+                {formatRegionLabel(region)}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
+
+      {filteredPlants.length === 0 ? (
+        <div className="border border-dashed border-white/25 p-4 text-sm text-white">
+          No plants match the current filters.
+        </div>
+      ) : (
+        <div className="overflow-auto border border-white/25">
+          <table className="min-w-full text-sm">
+            <thead className="border-b border-white/25 text-left text-[11px] uppercase tracking-[0.18em] text-white">
+              <tr>
+                <th className="px-3 py-3 font-medium">plant</th>
+                <th className="px-3 py-3 font-medium">area</th>
+                <th className="px-3 py-3 font-medium">risk</th>
+                <th className="px-3 py-3 font-medium">start</th>
+                <th className="px-3 py-3 font-medium text-right">yardage</th>
+                <th className="px-3 py-3 font-medium text-right">c on hand</th>
+                <th className="px-3 py-3 font-medium text-right">c diff</th>
+                <th className="px-3 py-3 font-medium text-right">f on hand</th>
+                <th className="px-3 py-3 font-medium text-right">f diff</th>
+                <th className="px-3 py-3 font-medium">usage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPlants.map((plant) => {
+                const riskStatus = getPlantRiskStatus(plant);
+                const riskFlags = formatRiskFlags(riskStatus);
+                const isSelected = selectedPlant?.id === plant.id;
+
+                return (
+                  <tr
+                    key={plant.id}
+                    onClick={() =>
+                      setSelectedPlantId((current) => (current === plant.id ? null : plant.id))
+                    }
+                    className={`cursor-pointer border-t border-white/15 text-white ${
+                      isSelected ? "bg-white/[0.08]" : "hover:bg-white/[0.03]"
+                    }`}
+                  >
+                    <td className="px-3 py-3 font-semibold">plant {plant.id}</td>
+                    <td className="px-3 py-3 text-white/75">{formatRegionLabel(plant.region)}</td>
+                    <td className="px-3 py-3">
+                      {riskFlags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {riskFlags.map((flag) => (
+                            <span
+                              key={flag}
+                              className="inline-flex min-w-6 items-center justify-center border border-rose-500/50 bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-300"
+                            >
+                              {flag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-emerald-300/80">stable</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-white/75">{getPlantStartTime(plant)}</td>
+                    <td className="px-3 py-3 text-right font-semibold">
+                      {formatNumber(plant.yardage, 1)}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      {formatNumber(plant.materials?.cement?.onHand, 2)}
+                    </td>
+                    <td
+                      className={`px-3 py-3 text-right ${
+                        riskStatus.cementRisk ? "font-semibold text-rose-300" : "text-white/75"
+                      }`}
+                    >
+                      {formatDiff(plant.materials?.cement?.diff)}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      {formatNumber(plant.materials?.flyash?.onHand, 2)}
+                    </td>
+                    <td
+                      className={`px-3 py-3 text-right ${
+                        riskStatus.flyashRisk ? "font-semibold text-rose-300" : "text-white/75"
+                      }`}
+                    >
+                      {formatDiff(plant.materials?.flyash?.diff)}
+                    </td>
+                    <td className="max-w-[340px] px-3 py-3 text-white/70">
+                      {formatMaterialUsageSummary(plant.materials)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </CliSection>
   );
 }
@@ -1015,11 +964,15 @@ function PlantDetailsPanel({
   if (!plant) return null;
 
   const materialRows = materialRowsForDisplay(plant.materials);
+  const usageRows = materialUsageRows(plant.materials);
   const negativeDiffCount = materialRows.filter((row) => row.diff !== null && row.diff < 0).length;
   const plantLogs = driverLogs.filter((entry) => Number(entry.plantId) === Number(plant.id));
   const detailDraft =
     driverLogDraft.plantId === plant.id ? driverLogDraft : createDriverLogDraft(plant.id);
   const saveDisabled = !hasDriverLogDraftContent(detailDraft);
+  const riskFlags = formatRiskFlags(getPlantRiskStatus(plant));
+  const startTime = getPlantStartTime(plant);
+  const areaLabel = formatRegionLabel(plant.region);
 
   return (
     <div className="self-start xl:sticky xl:top-6 xl:z-10">
@@ -1027,6 +980,10 @@ function PlantDetailsPanel({
         title={`Plant ${plant.id}`}
         right={
           <div className="flex items-center gap-2">
+            <div className="border border-white/15 px-3 py-2 text-white/80">{areaLabel}</div>
+            <div className="border border-white/15 px-3 py-2 text-white/80">
+              Start {startTime}
+            </div>
             <div className="border border-white/15 px-3 py-2 text-white/80">
               Yardage {formatNumber(plant.yardage, 1)}
             </div>
@@ -1036,17 +993,48 @@ function PlantDetailsPanel({
         }
       >
         <div className="max-h-[calc(100vh-250px)] space-y-6 overflow-y-auto pr-1">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <Metric label="Area" value={areaLabel} />
+            <Metric label="Start" value={startTime} />
             <Metric label="Yardage" value={formatNumber(plant.yardage, 1)} />
             <Metric label="Materials shown" value={materialRows.length} />
             <Metric label="Negative diffs" value={negativeDiffCount} />
-            <Metric label="Saved logs" value={plantLogs.length} />
+            <Metric
+              label="Risk"
+              value={riskFlags.length > 0 ? riskFlags.join(" / ") : "stable"}
+            />
           </div>
 
-          <div>
-            <div className="text-[12px] font-medium text-white/75">Materials</div>
-            <div className="mt-3">
-              <MaterialSnapshot materials={plant.materials} />
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_280px]">
+            <div>
+              <div className="text-[12px] font-medium text-white/75">Material Requirements</div>
+              <div className="mt-3">
+                <MaterialSnapshot materials={plant.materials} />
+              </div>
+            </div>
+
+            <div className="border border-white/15 p-4">
+              <div className="flex items-center justify-between gap-2 text-[12px] text-white">
+                <div className="font-medium">Material Usage</div>
+                <div className="text-white/55">placeholder</div>
+              </div>
+              <div className="mt-3 space-y-2">
+                {usageRows.length > 0 ? (
+                  usageRows.map((row) => (
+                    <div
+                      key={row.key}
+                      className="flex items-center justify-between gap-3 border border-white/10 px-3 py-2 text-sm text-white"
+                    >
+                      <span className="text-white/70">{row.label}</span>
+                      <span className="font-medium">{row.value}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="border border-dashed border-white/25 p-4 text-sm text-white/70">
+                    No material usage rows for this plant.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1068,7 +1056,7 @@ function PlantDetailsPanel({
             <div className="border border-white/15 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-white">
                 <div className="font-medium">Saved logs</div>
-                <div className="text-white/55">shared with log page</div>
+                <div className="text-white/55">{plantLogs.length} rows</div>
               </div>
               <DriverLogList
                 logs={plantLogs}
@@ -1086,6 +1074,8 @@ function PlantDetailsPanel({
 function PlantTotalsSection({ isOpen, onToggle, rows }) {
   const columns = [
     { key: "id", label: "plant" },
+    { key: "region", label: "area", render: (row) => formatRegionLabel(row.region) },
+    { key: "start", label: "start", render: (row) => getPlantStartTime(row) },
     { key: "yardage", label: "yardage", render: (row) => formatNumber(row.yardage, 1) },
     {
       key: "cementDiff",
@@ -1153,34 +1143,22 @@ function MaterialUsageSection({ rows }) {
     {
       key: "cementUsage",
       label: "cement",
-      render: (row) =>
-        hasMaterialSlotData(row.materials?.cement)
-          ? formatNumber(MATERIAL_USAGE_PLACEHOLDERS.cement, 2)
-          : "-",
+      render: (row) => formatMaterialUsageValue("cement", row.materials),
     },
     {
       key: "flyashUsage",
       label: "fly-ash",
-      render: (row) =>
-        hasMaterialSlotData(row.materials?.flyash)
-          ? formatNumber(MATERIAL_USAGE_PLACEHOLDERS.flyash, 2)
-          : "-",
+      render: (row) => formatMaterialUsageValue("flyash", row.materials),
     },
     {
       key: "plcUsage",
       label: "plc",
-      render: (row) =>
-        hasMaterialSlotData(row.materials?.plc)
-          ? formatNumber(MATERIAL_USAGE_PLACEHOLDERS.plc, 2)
-          : "-",
+      render: (row) => formatMaterialUsageValue("plc", row.materials),
     },
     {
       key: "lc3Usage",
       label: "lc3",
-      render: (row) =>
-        hasMaterialSlotData(row.materials?.lc3)
-          ? formatNumber(MATERIAL_USAGE_PLACEHOLDERS.lc3, 2)
-          : "-",
+      render: (row) => formatMaterialUsageValue("lc3", row.materials),
     },
   ];
 
@@ -1570,8 +1548,8 @@ export default function DispatchCockpitLive() {
         ) : null}
 
         {page === "cockpit" ? (
-          <div className="flex flex-col gap-4">
-            <PlantRibbon
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(380px,0.95fr)]">
+            <PlantBoardSection
               filteredPlants={filteredPlants}
               selectedPlant={selectedPlant}
               setSelectedPlantId={setSelectedPlantId}
@@ -1582,16 +1560,18 @@ export default function DispatchCockpitLive() {
               selectedRegion={selectedRegion}
               setSelectedRegion={setSelectedRegion}
             />
-            <PlantDetailsPanel
-              plant={selectedPlant}
-              driverLogs={driverLogs}
-              driverLogDraft={driverLogDraft}
-              driverOptions={driverOptions}
-              onDraftChange={updateDriverLogDraft}
-              onSaveDriverLog={saveDriverLog}
-              onClose={() => setSelectedPlantId(null)}
-              onOpenDriverLogPage={openDriverLogForPlant}
-            />
+            <div>
+              <PlantDetailsPanel
+                plant={selectedPlant}
+                driverLogs={driverLogs}
+                driverLogDraft={driverLogDraft}
+                driverOptions={driverOptions}
+                onDraftChange={updateDriverLogDraft}
+                onSaveDriverLog={saveDriverLog}
+                onClose={() => setSelectedPlantId(null)}
+                onOpenDriverLogPage={openDriverLogForPlant}
+              />
+            </div>
           </div>
         ) : page === "plant_totals" ? (
           <PlantTotalsSection
