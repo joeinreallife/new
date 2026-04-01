@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { formatRegionLabel, getPlantRegionMeta, REGION_ORDER } from "./dispatchMetadata.js";
 import { SOURCE_FILES } from "./sourceFiles.js";
 
 const MATERIAL_KEYS = ["cement", "flyash", "plc", "lc3"];
@@ -9,6 +10,22 @@ const MATERIAL_LABELS = {
   plc: "plc",
   lc3: "lc3",
 };
+
+const MATERIAL_USAGE_LABELS = {
+  cement: "Cement",
+  flyash: "Fly-ash",
+  plc: "PLC",
+  lc3: "LC3",
+};
+
+const MATERIAL_USAGE_PLACEHOLDERS = {
+  cement: 2.45,
+  flyash: 4.5,
+  plc: 1.85,
+  lc3: 3.2,
+};
+
+const UI_SCALE = 0.92;
 
 const DEMO_DRIVERS = [
   { id: "d01", name: "driver_01", status: "available", location: "rialto_yard" },
@@ -125,6 +142,7 @@ const DEMO_BASE = {
 function summarize(base) {
   const plants = base.plants.map((plant) => ({
     ...plant,
+    ...getPlantRegionMeta(plant),
     materials: DEMO_MATERIALS_BY_PLANT[plant.id] ?? emptyMaterialSummary(),
   }));
 
@@ -249,6 +267,13 @@ function getPlantRiskStatus(plant) {
   };
 }
 
+function formatRiskFlags(riskStatus) {
+  const flags = [];
+  if (riskStatus.cementRisk) flags.push("C");
+  if (riskStatus.flyashRisk) flags.push("F");
+  return flags;
+}
+
 function hasAnyMaterialData(materials) {
   return MATERIAL_KEYS.some((key) => hasMaterialSlotData(materials?.[key]));
 }
@@ -368,10 +393,12 @@ function buildCockpitData({
     const id = index + 1;
     const materials = materialByPlant.get(id) ?? emptyMaterialSummary();
     const yardage = yardageByPlant.get(id) ?? null;
+    const regionMeta = getPlantRegionMeta({ id });
     return {
       id,
       active: hasAnyMaterialData(materials) || yardage !== null,
       yardage,
+      ...regionMeta,
       materials,
     };
   });
@@ -499,6 +526,19 @@ function parseClockMinutes(value) {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
+function getPlantStartTime(plant) {
+  const times = MATERIAL_KEYS.map((key) => cleanText(plant.materials?.[key]?.time))
+    .filter(Boolean)
+    .map((time) => ({
+      label: formatClockLabel(time),
+      minutes: parseClockMinutes(time),
+    }))
+    .filter((time) => time.minutes !== Number.MAX_SAFE_INTEGER)
+    .sort((left, right) => left.minutes - right.minutes);
+
+  return times[0]?.label ?? "-";
+}
+
 function buildAggDriverRows(aggBuffer) {
   if (!aggBuffer) return DEMO_DRIVERS;
 
@@ -544,43 +584,37 @@ function buildAggDriverRows(aggBuffer) {
   return records.length > 0 ? records : DEMO_DRIVERS;
 }
 
-function StatCard({ label, value, detail = null }) {
-  return (
-    <div className="border border-white/25 bg-black p-4">
-      <div className="text-[11px] uppercase tracking-[0.18em] text-white opacity-70">{label}</div>
-      <div className="mt-2 text-xl font-semibold text-white">{value}</div>
-      {detail ? <div className="mt-2 text-[12px] leading-5 text-white">{detail}</div> : null}
-    </div>
-  );
-}
-
 function Metric({ label, value }) {
   return (
-    <div className="border border-white/25 bg-black px-3 py-2">
-      <div className="text-[10px] uppercase tracking-[0.14em] text-white opacity-70">{label}</div>
+    <div className="border border-white/15 bg-white/[0.02] px-3 py-2">
+      <div className="text-[11px] text-white/55">{label}</div>
       <div className="mt-1 text-[14px] font-medium text-white">{value}</div>
     </div>
   );
 }
 
-function CliButton({ children, onClick, disabled = false }) {
+function CliButton({ children, onClick, disabled = false, active = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="border border-white/25 bg-black px-3 py-2 text-xs font-medium uppercase tracking-[0.14em] text-white disabled:opacity-40"
+      className={`border px-3 py-2 text-[11px] font-medium transition disabled:opacity-40 ${
+        active
+          ? "border-white/40 bg-white/[0.1] text-white"
+          : "border-white/15 bg-white/[0.03] text-white/90 hover:bg-white/[0.06]"
+      }`}
     >
-      [{children}]
+      {children}
     </button>
   );
 }
 
 function CliSection({ title, children, right }) {
   return (
-    <section className="border border-white/25 bg-black p-4">
+    <section className="border border-white/15 bg-black p-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="text-[13px] uppercase tracking-[0.18em] text-white">{title}</div>
+        <div className="text-sm font-semibold text-white">{title}</div>
         {right}
       </div>
       {children}
@@ -594,7 +628,7 @@ function MaterialSnapshot({ materials }) {
   if (rows.length === 0) {
     return (
       <div className="border border-dashed border-white/25 p-4 text-sm text-white">
-        no_material_requirements_loaded
+        No material requirements loaded.
       </div>
     );
   }
@@ -605,7 +639,7 @@ function MaterialSnapshot({ materials }) {
         <thead className="border-b border-white/25 text-left text-[11px] uppercase tracking-[0.18em] text-white">
           <tr>
             <th className="px-3 py-3 font-medium">material</th>
-            <th className="px-3 py-3 font-medium text-right">on_hand</th>
+            <th className="px-3 py-3 font-medium text-right">on hand</th>
             <th className="px-3 py-3 font-medium text-right">loads</th>
             <th className="px-3 py-3 font-medium text-right">diff</th>
             <th className="px-3 py-3 font-medium text-right">req</th>
@@ -630,66 +664,107 @@ function MaterialSnapshot({ materials }) {
 function PlantTile({ plant, selected, onClick }) {
   const cement = plant.materials?.cement ?? emptyMaterialSlot();
   const flyash = plant.materials?.flyash ?? emptyMaterialSlot();
+  const riskStatus = getPlantRiskStatus(plant);
+  const riskFlags = formatRiskFlags(riskStatus);
+  const startTime = getPlantStartTime(plant);
+  const usageMaterials = materialRowsForDisplay(plant.materials);
 
   return (
     <button
       type="button"
       onClick={onClick}
       className={`w-[336px] shrink-0 overflow-hidden border p-4 text-left transition ${
-        selected ? "border-white bg-black" : "border-white/25 bg-black hover:border-white"
+        selected
+          ? "border-white bg-white/[0.04]"
+          : "border-white/15 bg-white/[0.02] hover:border-white/35"
       }`}
     >
-      <div className="mb-3 text-center text-[11px] uppercase tracking-[0.18em] text-white">
-        plant {plant.id}
-      </div>
-
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border border-white/25 bg-black px-3 py-4">
-        <div className="min-w-0 space-y-3 text-left text-white">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.14em] opacity-70">
-              cement_on_hand
-            </div>
-            <div className="mt-1 break-words text-[15px] font-semibold leading-tight">
-              {formatNumber(cement.onHand, 2)}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.14em] opacity-70">
-              flyash_on_hand
-            </div>
-            <div className="mt-1 break-words text-[15px] font-semibold leading-tight">
-              {formatNumber(flyash.onHand, 2)}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[11px] text-white/50">Plant {plant.id}</div>
+          <div className="mt-1 text-[11px] text-white/60">Start time {startTime}</div>
+          <div className="mt-2 border border-white/10 bg-white/[0.02] px-2 py-2">
+            <div className="text-[11px] text-white/50">Material usage</div>
+            <div className="mt-1 space-y-1 text-[11px] text-white/70">
+              {usageMaterials.length > 0 ? (
+                usageMaterials.map((row) => (
+                  <div key={row.key}>
+                    {MATERIAL_USAGE_LABELS[row.key] ?? row.label}:{" "}
+                    {formatNumber(MATERIAL_USAGE_PLACEHOLDERS[row.key] ?? 0, 2)}
+                  </div>
+                ))
+              ) : (
+                <div>-</div>
+              )}
             </div>
           </div>
+          {riskFlags.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {riskFlags.map((flag) => (
+                <span
+                  key={flag}
+                  className="inline-flex min-w-6 items-center justify-center border border-rose-500/50 bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-300"
+                >
+                  {flag}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-2 text-[11px] text-emerald-300/80">stable</div>
+          )}
         </div>
 
-        <div className="min-w-0 text-center text-white">
-          <div className="text-[11px] uppercase tracking-[0.18em] opacity-70">yardage</div>
-          <div className="mt-2 break-words text-3xl font-semibold leading-none">
+        <div className="text-right">
+          <div className="text-[11px] text-white/50">Yardage</div>
+          <div className="mt-1 text-3xl font-semibold leading-none text-white">
             {formatNumber(plant.yardage, 1)}
           </div>
         </div>
+      </div>
 
-        <div className="min-w-0 space-y-3 text-right text-white">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.14em] opacity-70">cement_req</div>
-            <div className="mt-1 break-words text-[15px] font-semibold leading-tight">
-              {formatNumber(cement.requiredLoads, 2)}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.14em] opacity-70">flyash_req</div>
-            <div className="mt-1 break-words text-[15px] font-semibold leading-tight">
-              {formatNumber(flyash.requiredLoads, 2)}
-            </div>
+      <div className="mt-4 space-y-2 border-t border-white/10 pt-3">
+        <div className="grid grid-cols-[24px_minmax(0,1fr)_auto_auto] items-center gap-2 text-sm text-white">
+          <div className="font-semibold text-white/75">C</div>
+          <div className="text-white/60">on hand</div>
+          <div>{formatNumber(cement.onHand, 2)}</div>
+          <div className={riskStatus.cementRisk ? "font-semibold text-rose-300" : "text-white/70"}>
+            req {formatNumber(cement.requiredLoads, 2)}
           </div>
         </div>
+        <div className="grid grid-cols-[24px_minmax(0,1fr)_auto_auto] items-center gap-2 text-sm text-white">
+          <div className="font-semibold text-white/75">F</div>
+          <div className="text-white/60">on hand</div>
+          <div>{formatNumber(flyash.onHand, 2)}</div>
+          <div className={riskStatus.flyashRisk ? "font-semibold text-rose-300" : "text-white/70"}>
+            req {formatNumber(flyash.requiredLoads, 2)}
+          </div>
+        </div>
+        {(riskStatus.cementRisk || riskStatus.flyashRisk) && (
+          <div className="pt-1 text-[11px] text-rose-300">
+            negative diff on {riskFlags.join(" / ")}
+          </div>
+        )}
+        {!riskStatus.cementRisk && !riskStatus.flyashRisk && (
+          <div className="pt-1 text-[11px] text-white/50">
+            no cement or flyash shortage flagged
+          </div>
+        )}
       </div>
     </button>
   );
 }
 
-function PlantRibbon({ filteredPlants, selectedPlant, setSelectedPlantId }) {
+function PlantRibbon({
+  filteredPlants,
+  selectedPlant,
+  setSelectedPlantId,
+  activeOnly,
+  setActiveOnly,
+  search,
+  setSearch,
+  selectedRegion,
+  setSelectedRegion,
+}) {
   const plantStripRef = useRef(null);
   const [plantStripMetrics, setPlantStripMetrics] = useState({
     scrollLeft: 0,
@@ -735,35 +810,55 @@ function PlantRibbon({ filteredPlants, selectedPlant, setSelectedPlantId }) {
 
   return (
     <CliSection
-      title="plant_ribbon"
+      title="Plants"
       right={
-        <div className="flex flex-wrap items-center gap-2 text-sm text-white">
-          <div className="border border-white/25 px-3 py-2">shown_plants {filteredPlants.length}</div>
-          {selectedPlant ? (
-            <div className="border border-white/25 px-3 py-2">selected_plt {selectedPlant.id}</div>
-          ) : null}
-          <CliButton onClick={() => scrollPlantStripBy(-1)} disabled={!canScrollPlantPrev}>
-            prev
-          </CliButton>
-          <CliButton onClick={() => scrollPlantStripBy(1)} disabled={!canScrollPlantNext}>
-            next
-          </CliButton>
-          <input
-            type="range"
-            min="0"
-            max={Math.max(1, plantStripMetrics.maxScrollLeft)}
-            value={Math.min(
-              plantStripMetrics.scrollLeft,
-              Math.max(1, plantStripMetrics.maxScrollLeft),
-            )}
-            onChange={(event) => {
-              const strip = plantStripRef.current;
-              if (!strip) return;
-              strip.scrollLeft = Number(event.target.value);
-              syncPlantStripMetrics();
-            }}
-            className="h-2 w-40 accent-white"
-          />
+        <div className="flex flex-col gap-3 sm:items-end">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
+            <div>{filteredPlants.length} shown</div>
+            {selectedPlant ? <div>selected {selectedPlant.id}</div> : null}
+            <CliButton onClick={() => scrollPlantStripBy(-1)} disabled={!canScrollPlantPrev}>
+              Prev
+            </CliButton>
+            <CliButton onClick={() => scrollPlantStripBy(1)} disabled={!canScrollPlantNext}>
+              Next
+            </CliButton>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 border border-white/15 px-3 py-2 text-sm text-white/85">
+              <input
+                type="checkbox"
+                checked={activeOnly}
+                onChange={(event) => setActiveOnly(event.target.checked)}
+              />
+              <span>Active plants only</span>
+            </label>
+            <label className="flex min-w-[220px] items-center gap-2 border border-white/15 px-3 py-2 text-sm text-white/85">
+              <span className="text-white/55">Search plant ID</span>
+              <input
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Plant id"
+                className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+              />
+            </label>
+            <label className="flex items-center gap-2 border border-white/15 px-3 py-2 text-sm text-white/85">
+              <span className="text-white/55">Area</span>
+              <select
+                value={selectedRegion}
+                onChange={(event) => setSelectedRegion(event.target.value)}
+                className="bg-black text-sm text-white outline-none"
+              >
+                <option value="all">All areas</option>
+                {REGION_ORDER.map((region) => (
+                  <option key={region} value={region}>
+                    {formatRegionLabel(region)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
       }
     >
@@ -774,7 +869,9 @@ function PlantRibbon({ filteredPlants, selectedPlant, setSelectedPlantId }) {
               key={plant.id}
               plant={plant}
               selected={selectedPlant?.id === plant.id}
-              onClick={() => setSelectedPlantId((current) => (current === plant.id ? null : plant.id))}
+              onClick={() =>
+                setSelectedPlantId((current) => (current === plant.id ? null : plant.id))
+              }
             />
           ))}
         </div>
@@ -871,7 +968,7 @@ function DriverLogForm({
         onChange={(event) => onDraftChange("location", event.target.value)}
       />
       <DriverLogTextField
-        label="truck_number"
+        label="truck number"
         value={draft.truckNumber}
         listId={`driver-log-truck-${draft.plantId ?? "none"}`}
         options={driverOptions.truckNumbers}
@@ -890,7 +987,7 @@ function DriverLogForm({
         onChange={(event) => onDraftChange("source", event.target.value)}
       />
       <DriverLogTextField
-        label="inv_code"
+        label="inv code"
         value={draft.invCode}
         listId={`driver-log-code-${draft.plantId ?? "none"}`}
         options={driverOptions.invCodes}
@@ -927,39 +1024,37 @@ function PlantDetailsPanel({
   return (
     <div className="self-start xl:sticky xl:top-6 xl:z-10">
       <CliSection
-        title={`plant_detail::${plant.id}`}
+        title={`Plant ${plant.id}`}
         right={
           <div className="flex items-center gap-2">
-            <div className="border border-white/25 px-3 py-2 text-white">
-              yardage {formatNumber(plant.yardage, 1)}
+            <div className="border border-white/15 px-3 py-2 text-white/80">
+              Yardage {formatNumber(plant.yardage, 1)}
             </div>
-            <CliButton onClick={() => onOpenDriverLogPage(plant)}>view_driver_log_page</CliButton>
-            <CliButton onClick={onClose}>close</CliButton>
+            <CliButton onClick={() => onOpenDriverLogPage(plant)}>Log page</CliButton>
+            <CliButton onClick={onClose}>Close</CliButton>
           </div>
         }
       >
         <div className="max-h-[calc(100vh-250px)] space-y-6 overflow-y-auto pr-1">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric label="yardage" value={formatNumber(plant.yardage, 1)} />
-            <Metric label="materials_shown" value={materialRows.length} />
-            <Metric label="negative_diffs" value={negativeDiffCount} />
-            <Metric label="saved_driver_logs" value={plantLogs.length} />
+            <Metric label="Yardage" value={formatNumber(plant.yardage, 1)} />
+            <Metric label="Materials shown" value={materialRows.length} />
+            <Metric label="Negative diffs" value={negativeDiffCount} />
+            <Metric label="Saved logs" value={plantLogs.length} />
           </div>
 
           <div>
-            <div className="text-[11px] uppercase tracking-[0.18em] text-white">
-              material_snapshot
-            </div>
+            <div className="text-[12px] font-medium text-white/75">Materials</div>
             <div className="mt-3">
               <MaterialSnapshot materials={plant.materials} />
             </div>
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-            <div className="border border-white/25 p-4">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-white">
-                <div>driver_log_input</div>
-                <div className="opacity-70">save_from_plant_detail</div>
+            <div className="border border-white/15 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-white">
+                <div className="font-medium">Driver input</div>
+                <div className="text-white/55">save here</div>
               </div>
               <DriverLogForm
                 draft={detailDraft}
@@ -970,15 +1065,15 @@ function PlantDetailsPanel({
               />
             </div>
 
-            <div className="border border-white/25 p-4">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-white">
-                <div>driver_logs</div>
-                <div className="opacity-70">shared_with_driver_log_page</div>
+            <div className="border border-white/15 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-white">
+                <div className="font-medium">Saved logs</div>
+                <div className="text-white/55">shared with log page</div>
               </div>
               <DriverLogList
                 logs={plantLogs}
                 showPlant={false}
-                emptyLabel="no_saved_driver_logs_for_this_plant"
+                emptyLabel="No saved driver logs for this plant yet."
               />
             </div>
           </div>
@@ -994,27 +1089,27 @@ function PlantTotalsSection({ isOpen, onToggle, rows }) {
     { key: "yardage", label: "yardage", render: (row) => formatNumber(row.yardage, 1) },
     {
       key: "cementDiff",
-      label: "cement_diff",
+      label: "cement diff",
       render: (row) => formatDiff(row.materials?.cement?.diff),
     },
     {
       key: "flyashDiff",
-      label: "flyash_diff",
+      label: "flyash diff",
       render: (row) => formatDiff(row.materials?.flyash?.diff),
     },
-    { key: "plcDiff", label: "plc_diff", render: (row) => formatDiff(row.materials?.plc?.diff) },
-    { key: "lc3Diff", label: "lc3_diff", render: (row) => formatDiff(row.materials?.lc3?.diff) },
+    { key: "plcDiff", label: "plc diff", render: (row) => formatDiff(row.materials?.plc?.diff) },
+    { key: "lc3Diff", label: "lc3 diff", render: (row) => formatDiff(row.materials?.lc3?.diff) },
   ];
 
   return (
     <CliSection
-      title="plant_totals"
-      right={<CliButton onClick={onToggle}>{isOpen ? "close" : "open"}</CliButton>}
+      title="Material Requirements"
+      right={<CliButton onClick={onToggle}>{isOpen ? "Hide" : "Show"}</CliButton>}
     >
       {isOpen ? (
         rows.length === 0 ? (
           <div className="border border-dashed border-white/25 p-4 text-sm text-white">
-            no_plants_match_current_filters
+            No plants match the current filters.
           </div>
         ) : (
           <div className="overflow-auto border border-white/25">
@@ -1047,29 +1142,122 @@ function PlantTotalsSection({ isOpen, onToggle, rows }) {
   );
 }
 
-function DriverStatusPanel({ isOpen, onToggle, drivers }) {
+function MaterialUsageSection({ rows }) {
+  const columns = [
+    { key: "id", label: "plant" },
+    {
+      key: "region",
+      label: "area",
+      render: (row) => formatRegionLabel(row.region),
+    },
+    {
+      key: "cementUsage",
+      label: "cement",
+      render: (row) =>
+        hasMaterialSlotData(row.materials?.cement)
+          ? formatNumber(MATERIAL_USAGE_PLACEHOLDERS.cement, 2)
+          : "-",
+    },
+    {
+      key: "flyashUsage",
+      label: "fly-ash",
+      render: (row) =>
+        hasMaterialSlotData(row.materials?.flyash)
+          ? formatNumber(MATERIAL_USAGE_PLACEHOLDERS.flyash, 2)
+          : "-",
+    },
+    {
+      key: "plcUsage",
+      label: "plc",
+      render: (row) =>
+        hasMaterialSlotData(row.materials?.plc)
+          ? formatNumber(MATERIAL_USAGE_PLACEHOLDERS.plc, 2)
+          : "-",
+    },
+    {
+      key: "lc3Usage",
+      label: "lc3",
+      render: (row) =>
+        hasMaterialSlotData(row.materials?.lc3)
+          ? formatNumber(MATERIAL_USAGE_PLACEHOLDERS.lc3, 2)
+          : "-",
+    },
+  ];
+
+  return (
+    <CliSection title="Material Usage">
+      {rows.length === 0 ? (
+        <div className="border border-dashed border-white/25 p-4 text-sm text-white">
+          No plants match the current filters.
+        </div>
+      ) : (
+        <div className="overflow-auto border border-white/25">
+          <table className="min-w-full text-sm">
+            <thead className="border-b border-white/25 text-left text-[11px] uppercase tracking-[0.18em] text-white">
+              <tr>
+                {columns.map((column) => (
+                  <th key={column.key} className="px-3 py-3 font-medium">
+                    {column.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} className="border-t border-white/15 text-white">
+                  {columns.map((column) => (
+                    <td key={column.key} className="px-3 py-3 align-top">
+                      {column.render ? column.render(row) : row[column.key] ?? "-"}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </CliSection>
+  );
+}
+
+function DriverStatusPanel({ isOpen, onToggle, drivers, variant = "sidebar" }) {
+  const listClass =
+    variant === "page"
+      ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+      : "max-h-[calc(100vh-220px)] space-y-2 overflow-y-auto pr-1";
+  const summaryClass =
+    variant === "page"
+      ? "border border-white/15 bg-white/[0.02] p-3 text-sm text-white/75 md:col-span-2 xl:col-span-3"
+      : "border border-white/15 bg-white/[0.02] p-3 text-sm text-white/75";
+
   return (
     <CliSection
-      title="driver_status"
-      right={<CliButton onClick={onToggle}>{isOpen ? "close" : "open"}</CliButton>}
+      title="Drivers"
+      right={<CliButton onClick={onToggle}>{isOpen ? "Hide" : "Show"}</CliButton>}
     >
       {isOpen ? (
-        <div className="max-h-[calc(100vh-220px)] space-y-2 overflow-y-auto pr-1">
-          <div className="border border-white/25 p-3 text-sm text-white">
-            driver_count {drivers.length}
+        <div className={listClass}>
+          <div className={summaryClass}>
+            {drivers.length} driver rows loaded
           </div>
-          {drivers.map((driver) => (
-            <div key={driver.id} className="border border-white/25 p-3 text-sm text-white">
-              <div className="font-semibold">{driver.name}</div>
-              <div className="mt-1 opacity-80">status {driver.status}</div>
-              <div className="mt-1 opacity-80">location {driver.location}</div>
-              {"assignedTruck" in driver ? (
-                <div className="mt-1 opacity-80">
-                  truck {driver.assignedTruck || "-"} drv {driver.driverCode || "-"}
+          {drivers.map((driver) => {
+            const truck = "assignedTruck" in driver ? driver.assignedTruck || "-" : "-";
+            const code = "driverCode" in driver ? driver.driverCode || "" : "";
+
+            return (
+              <div key={driver.id} className="border border-white/15 bg-white/[0.02] p-3 text-sm text-white">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-semibold">{driver.name}</div>
+                  <div className="text-[11px] text-white/55">truck {truck}</div>
                 </div>
-              ) : null}
-            </div>
-          ))}
+                <div className="mt-1 text-white/75">{driver.location}</div>
+                <div className="mt-1 text-[11px] text-white/50">
+                  {driver.status}
+                  {code ? ` - code ${code}` : ""}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : null}
     </CliSection>
@@ -1095,7 +1283,7 @@ function DriverLogPage({
 
   return (
     <div className="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
-      <CliSection title="driver_log_editor">
+      <CliSection title="Driver log editor">
         <DriverLogForm
           draft={draft}
           driverOptions={driverOptions}
@@ -1106,10 +1294,10 @@ function DriverLogPage({
       </CliSection>
 
       <CliSection
-        title={`saved_driver_logs::plant_${draft.plantId ?? "none"}`}
+        title={`Saved logs${draft.plantId === null ? "" : ` for plant ${draft.plantId}`}`}
         right={
           plant ? (
-            <CliButton onClick={() => onOpenPlant(plant.id)}>open_plant_{plant.id}</CliButton>
+            <CliButton onClick={() => onOpenPlant(plant.id)}>Open plant {plant.id}</CliButton>
           ) : null
         }
       >
@@ -1117,8 +1305,8 @@ function DriverLogPage({
           logs={plantLogs}
           emptyLabel={
             draft.plantId === null
-              ? "select_a_plant_and_use_open_driver_log_page"
-              : "no_saved_logs_for_selected_plant"
+              ? "Select a plant from the cockpit first."
+              : "No saved logs for this plant yet."
           }
         />
       </CliSection>
@@ -1132,8 +1320,9 @@ export default function DispatchCockpitLive() {
   const [page, setPage] = useState("cockpit");
   const [activeOnly, setActiveOnly] = useState(true);
   const [search, setSearch] = useState("");
+  const [selectedRegion, setSelectedRegion] = useState("all");
   const [selectedPlantId, setSelectedPlantId] = useState(null);
-  const [showPlantTotals, setShowPlantTotals] = useState(false);
+  const [showPlantTotals, setShowPlantTotals] = useState(true);
   const [showDriverStatus, setShowDriverStatus] = useState(true);
   const [driverLogs, setDriverLogs] = useState(loadDriverLogs);
   const [driverLogDraft, setDriverLogDraft] = useState(() => createDriverLogDraft(null));
@@ -1146,17 +1335,19 @@ export default function DispatchCockpitLive() {
 
   const filteredPlants = useMemo(() => {
     const query = search.trim();
+    const exactPlantId = query === "" ? null : Number(query);
     return data.plants.filter((plant) => {
       if (activeOnly && !plant.active) return false;
-      if (query && !String(plant.id).includes(query)) return false;
+      if (selectedRegion !== "all" && plant.region !== selectedRegion) return false;
+      if (query && (!Number.isInteger(exactPlantId) || plant.id !== exactPlantId)) return false;
       return true;
     });
-  }, [data, activeOnly, search]);
+  }, [data, activeOnly, search, selectedRegion]);
 
   const selectedPlant = useMemo(() => {
     if (selectedPlantId === null) return null;
-    return filteredPlants.find((plant) => plant.id === selectedPlantId) ?? null;
-  }, [filteredPlants, selectedPlantId]);
+    return data.plants.find((plant) => plant.id === selectedPlantId) ?? null;
+  }, [data, selectedPlantId]);
 
   const riskPlants = useMemo(
     () =>
@@ -1183,12 +1374,6 @@ export default function DispatchCockpitLive() {
     }),
     [drivers],
   );
-
-  useEffect(() => {
-    if (selectedPlantId !== null && !filteredPlants.some((plant) => plant.id === selectedPlantId)) {
-      setSelectedPlantId(null);
-    }
-  }, [filteredPlants, selectedPlantId]);
 
   useEffect(() => {
     window.localStorage.setItem(DRIVER_LOG_STORAGE_KEY, JSON.stringify(driverLogs));
@@ -1284,113 +1469,145 @@ export default function DispatchCockpitLive() {
 
   return (
     <main className="min-h-screen bg-black font-mono text-[13px] text-white">
-      <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-4 p-4 md:p-6 xl:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-3 border border-white/25 bg-black px-4 py-3">
-          <div className="text-[13px] uppercase tracking-[0.18em] text-white">
-            dispatch_cockpit::material_view
+      <div
+        className="mx-auto flex w-full max-w-[1680px] flex-col gap-4 p-4 md:p-6 xl:p-8"
+        style={{ zoom: UI_SCALE }}
+      >
+        <div className="border border-white/15 bg-white/[0.02] px-4 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-base font-semibold text-white">Dispatch cockpit</div>
+              <div className="mt-1 text-sm text-white/55">
+                Live materials, plant risk, and driver assignments
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 sm:items-end">
+            <div className="flex flex-wrap items-center gap-2">
+                <CliButton active={page === "cockpit"} onClick={() => setPage("cockpit")}>
+                  Cockpit
+                </CliButton>
+                <CliButton
+                  active={page === "plant_totals"}
+                  onClick={() => {
+                    setShowPlantTotals(true);
+                    setPage("plant_totals");
+                  }}
+                >
+                  Material Requirements
+                </CliButton>
+                <CliButton active={page === "material_usage"} onClick={() => setPage("material_usage")}>
+                  Material Usage
+                </CliButton>
+                <CliButton active={page === "drivers"} onClick={() => setPage("drivers")}>
+                  Drivers
+                </CliButton>
+                <CliButton active={page === "driver_logs"} onClick={() => setPage("driver_logs")}>
+                  Driver logs
+                </CliButton>
+                <CliButton onClick={() => void refreshFromDesktop()} disabled={running}>
+                  {running ? "Refreshing..." : "Refresh data"}
+                </CliButton>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="border border-white/15 px-3 py-2 text-sm text-white/80">
+                  <span className="text-white/50">Active plants </span>
+                  <span className="font-semibold text-white">{data.summary.activePlants}</span>
+                </div>
+                <div className="border border-white/15 px-3 py-2 text-sm text-white/80">
+                  <span className="text-white/50">Total yardage </span>
+                  <span className="font-semibold text-white">
+                    {formatNumber(data.summary.totalYardage, 1)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="border border-white/15 px-3 py-2 text-sm text-white/80">
+                <div>
+                  <span className="text-white/50">Risk plants </span>
+                  <span className="font-semibold text-white">{riskPlantCount}</span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {riskPlants.length > 0 ? (
+                    riskPlants.map((plant) => (
+                      <div
+                        key={plant.id}
+                        className="inline-flex items-center gap-1 border border-white/25 px-2 py-1 text-[12px]"
+                      >
+                        <span>{plant.id}</span>
+                        {plant.cementRisk ? (
+                          <span className="font-semibold text-rose-400">C</span>
+                        ) : null}
+                        {plant.flyashRisk ? (
+                          <span className="font-semibold text-rose-400">F</span>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-white/45">none</span>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <CliButton onClick={() => setPage("cockpit")}>cockpit</CliButton>
-            <CliButton onClick={() => setPage("driver_logs")}>driver_log_page</CliButton>
-            <CliButton onClick={() => void refreshFromDesktop()} disabled={running}>
-              {running ? "loading_desktop" : "reload_desktop_sources"}
-            </CliButton>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="border border-white/15 px-3 py-2 text-sm text-white/65">
+              Updated {new Date(data.meta?.generatedAt ?? Date.now()).toLocaleString()}
+            </div>
+            {selectedPlant ? (
+              <div className="border border-white/15 px-3 py-2 text-sm text-white/65">
+                Selected plant {selectedPlant.id}
+              </div>
+            ) : null}
           </div>
         </div>
 
         {error ? (
-          <div className="border border-white/25 bg-black px-4 py-3 text-sm text-white">
-            error {error}
+          <div className="border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            {error}
           </div>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <StatCard label="active_plants" value={data.summary.activePlants} />
-          <StatCard
-            label="risk_plants"
-            value={riskPlantCount}
-            detail={
-              riskPlants.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {riskPlants.map((plant) => (
-                    <div
-                      key={plant.id}
-                      className="inline-flex items-center gap-1 border border-white/25 px-2 py-1"
-                    >
-                      <span>{plant.id}</span>
-                      {plant.cementRisk ? (
-                        <span className="font-semibold text-rose-400">C</span>
-                      ) : null}
-                      {plant.flyashRisk ? (
-                        <span className="font-semibold text-rose-400">F</span>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : null
-            }
-          />
-          <StatCard label="total_yardage" value={formatNumber(data.summary.totalYardage, 1)} />
-        </div>
-
-        <CliSection title="filters">
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="inline-flex items-center gap-2 border border-white/25 px-3 py-2 text-sm text-white">
-              <input
-                type="checkbox"
-                checked={activeOnly}
-                onChange={(event) => setActiveOnly(event.target.checked)}
-              />
-              <span>active_only</span>
-            </label>
-            <label className="flex min-w-[220px] flex-col gap-2">
-              <span className="text-[11px] uppercase tracking-[0.18em] text-white opacity-70">
-                plant_search
-              </span>
-              <input
-                type="text"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="type_plant_id"
-                className="border border-white/25 bg-black px-3 py-2 text-sm text-white outline-none placeholder:text-white/40"
-              />
-            </label>
-          </div>
-        </CliSection>
-
         {page === "cockpit" ? (
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <div className="flex flex-col gap-4">
-              <PlantRibbon
-                filteredPlants={filteredPlants}
-                selectedPlant={selectedPlant}
-                setSelectedPlantId={setSelectedPlantId}
-              />
-              <PlantDetailsPanel
-                plant={selectedPlant}
-                driverLogs={driverLogs}
-                driverLogDraft={driverLogDraft}
-                driverOptions={driverOptions}
-                onDraftChange={updateDriverLogDraft}
-                onSaveDriverLog={saveDriverLog}
-                onClose={() => setSelectedPlantId(null)}
-                onOpenDriverLogPage={openDriverLogForPlant}
-              />
-              <PlantTotalsSection
-                isOpen={showPlantTotals}
-                onToggle={() => setShowPlantTotals((current) => !current)}
-                rows={filteredPlants}
-              />
-            </div>
-
-            <div className="self-start xl:sticky xl:top-6">
-              <DriverStatusPanel
-                isOpen={showDriverStatus}
-                onToggle={() => setShowDriverStatus((current) => !current)}
-                drivers={drivers}
-              />
-            </div>
+          <div className="flex flex-col gap-4">
+            <PlantRibbon
+              filteredPlants={filteredPlants}
+              selectedPlant={selectedPlant}
+              setSelectedPlantId={setSelectedPlantId}
+              activeOnly={activeOnly}
+              setActiveOnly={setActiveOnly}
+              search={search}
+              setSearch={setSearch}
+              selectedRegion={selectedRegion}
+              setSelectedRegion={setSelectedRegion}
+            />
+            <PlantDetailsPanel
+              plant={selectedPlant}
+              driverLogs={driverLogs}
+              driverLogDraft={driverLogDraft}
+              driverOptions={driverOptions}
+              onDraftChange={updateDriverLogDraft}
+              onSaveDriverLog={saveDriverLog}
+              onClose={() => setSelectedPlantId(null)}
+              onOpenDriverLogPage={openDriverLogForPlant}
+            />
           </div>
+        ) : page === "plant_totals" ? (
+          <PlantTotalsSection
+            isOpen={showPlantTotals}
+            onToggle={() => setShowPlantTotals((current) => !current)}
+            rows={filteredPlants}
+          />
+        ) : page === "material_usage" ? (
+          <MaterialUsageSection rows={filteredPlants} />
+        ) : page === "drivers" ? (
+          <DriverStatusPanel
+            isOpen={showDriverStatus}
+            onToggle={() => setShowDriverStatus((current) => !current)}
+            drivers={drivers}
+            variant="page"
+          />
         ) : (
           <DriverLogPage
             plant={draftPlant}
