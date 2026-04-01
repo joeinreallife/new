@@ -25,6 +25,14 @@ const MATERIAL_USAGE_PLACEHOLDERS = {
   lc3: 3.2,
 };
 
+const DISPATCH_NOTES = [
+  {
+    id: "warning-threshold-replenishment-trucks",
+    title: "Assigned replenishment truck warning",
+    body: "Trigger a warning when the number of assigned replenishment trucks reaches the warning threshold relative to on-hand inventory.",
+  },
+];
+
 const UI_SCALE = 0.92;
 
 const DEMO_DRIVERS = [
@@ -40,10 +48,10 @@ const DEMO_DRIVERS = [
 
 const DRIVER_LOG_STORAGE_KEY = "dispatch-cockpit-driver-logs-v1";
 
-function createDriverLogDraft(plantId = null) {
+function createDriverLogDraft(plantId = null, location = "") {
   return {
     plantId,
-    location: "",
+    location,
     truckNumber: "",
     driver: "",
     source: "",
@@ -60,6 +68,10 @@ function loadDriverLogs() {
   } catch {
     return [];
   }
+}
+
+function driverLogLocationForPlant(plant) {
+  return plant ? `Plant ${plant.id}` : "";
 }
 
 function emptyMaterialSlot() {
@@ -296,7 +308,7 @@ function buildPlantDecision(plant) {
       severity: row.diff <= -1 || (row.requiredLoads ?? 0) > 0 ? "critical" : "attention",
       materialKey: row.key,
       materialLabel,
-      actionLabel: `Protect ${materialLabel} at Plant ${plant.id}`,
+      actionLabel: `Send ${materialLabel} to Plant ${plant.id}`,
       reason: `Diff ${formatDiff(row.diff)} and required loads ${formatNumber(row.requiredLoads, 2)}`,
       support: `On hand ${formatNumber(row.onHand, 2)} | current loads ${formatNumber(row.loads, 2)}`,
       byTime: cleanText(row.time) || getPlantStartTime(plant),
@@ -648,7 +660,7 @@ function Metric({ label, value }) {
   );
 }
 
-function CliButton({ children, onClick, disabled = false, active = false }) {
+function CliButton({ children, onClick, disabled = false, active = false, className = "" }) {
   return (
     <button
       type="button"
@@ -658,7 +670,7 @@ function CliButton({ children, onClick, disabled = false, active = false }) {
         active
           ? "border-white/40 bg-white/[0.1] text-white"
           : "border-white/15 bg-white/[0.03] text-white/90 hover:bg-white/[0.06]"
-      }`}
+      } ${className}`}
     >
       {children}
     </button>
@@ -758,13 +770,26 @@ function DecisionCard({ item, selected, onSelect }) {
   );
 }
 
-function DecisionQueueSection({ title, items, selectedPlantId, onSelectPlant, emptyLabel }) {
+function DecisionQueueSection({
+  title,
+  items,
+  selectedPlantId,
+  onSelectPlant,
+  emptyLabel,
+  isOpen,
+  onToggle,
+}) {
   return (
     <CliSection
       title={title}
-      right={<div className="text-sm text-white/60">{items.length} plants</div>}
+      right={
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-white/60">{items.length} plants</div>
+          <CliButton onClick={onToggle}>{isOpen ? "Hide" : "Show"}</CliButton>
+        </div>
+      }
     >
-      {items.length === 0 ? (
+      {!isOpen ? null : items.length === 0 ? (
         <div className="border border-dashed border-white/25 p-4 text-sm text-white">
           {emptyLabel}
         </div>
@@ -784,6 +809,61 @@ function DecisionQueueSection({ title, items, selectedPlantId, onSelectPlant, em
   );
 }
 
+function DecisionsPage({
+  actNowDecisions,
+  watchDecisions,
+  showActNow,
+  setShowActNow,
+  showWatchNext,
+  setShowWatchNext,
+  selectedPlantId,
+  setSelectedPlantId,
+  selectedPlant,
+  onOpenDriverLogPage,
+  onClosePlant,
+}) {
+  return (
+    <div
+      className={`grid gap-4 ${
+        selectedPlant ? "xl:grid-cols-[minmax(0,1.15fr)_minmax(380px,0.85fr)]" : ""
+      }`}
+    >
+      <div className="min-w-0">
+        <div className="grid gap-4 xl:grid-cols-2">
+          <DecisionQueueSection
+            title="Act now"
+            items={actNowDecisions}
+            selectedPlantId={selectedPlantId}
+            onSelectPlant={setSelectedPlantId}
+            emptyLabel="No plants currently need immediate action."
+            isOpen={showActNow}
+            onToggle={() => setShowActNow((current) => !current)}
+          />
+          <DecisionQueueSection
+            title="Watch next"
+            items={watchDecisions}
+            selectedPlantId={selectedPlantId}
+            onSelectPlant={setSelectedPlantId}
+            emptyLabel="No near-term watch items in the current filter."
+            isOpen={showWatchNext}
+            onToggle={() => setShowWatchNext((current) => !current)}
+          />
+        </div>
+      </div>
+
+      {selectedPlant ? (
+        <div className="min-w-0">
+          <PlantDetailsPanel
+            plant={selectedPlant}
+            onClose={onClosePlant}
+            onOpenDriverLogPage={onOpenDriverLogPage}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PlantTile({ plant, selected, onClick }) {
   const cement = plant.materials?.cement ?? emptyMaterialSlot();
   const flyash = plant.materials?.flyash ?? emptyMaterialSlot();
@@ -791,12 +871,21 @@ function PlantTile({ plant, selected, onClick }) {
   const riskFlags = formatRiskFlags(riskStatus);
   const startTime = getPlantStartTime(plant);
   const usageMaterials = materialRowsForDisplay(plant.materials);
+  const decision = buildPlantDecision(plant);
+  const areaLabel = formatRegionLabel(plant.region);
+  const hoverTitle = decision ? decision.actionLabel : `Plant ${plant.id} is stable`;
+  const hoverReason = decision
+    ? decision.reason
+    : "No immediate cement or fly-ash action is flagged.";
+  const hoverSupport = decision
+    ? decision.support
+    : `Start time ${startTime} | yardage ${formatNumber(plant.yardage, 1)}`;
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`w-[336px] shrink-0 overflow-hidden border p-4 text-left transition ${
+      className={`group relative w-[336px] shrink-0 overflow-visible border p-4 text-left transition ${
         selected
           ? "border-white bg-white/[0.04]"
           : "border-white/15 bg-white/[0.02] hover:border-white/35"
@@ -872,6 +961,16 @@ function PlantTile({ plant, selected, onClick }) {
             no cement or flyash shortage flagged
           </div>
         )}
+      </div>
+
+      <div className="pointer-events-none absolute left-3 right-3 top-full z-30 mt-2 hidden translate-y-1 border border-white/20 bg-black/95 p-3 opacity-0 shadow-2xl shadow-black/40 transition duration-150 group-hover:translate-y-0 group-hover:opacity-100 xl:block">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-[11px] uppercase tracking-[0.14em] text-white/50">quick view</div>
+          <div className="text-[11px] text-white/50">{areaLabel}</div>
+        </div>
+        <div className="mt-2 text-sm font-semibold text-white">{hoverTitle}</div>
+        <div className="mt-2 text-[12px] text-white/80">{hoverReason}</div>
+        <div className="mt-1 text-[12px] text-white/55">{hoverSupport}</div>
       </div>
     </button>
   );
@@ -985,7 +1084,7 @@ function PlantRibbon({
         </div>
       }
     >
-      <div ref={plantStripRef} className="overflow-x-auto overflow-y-hidden pb-1">
+      <div ref={plantStripRef} className="overflow-x-auto overflow-y-visible py-2">
         <div className="flex min-w-max gap-3 pr-3">
           {filteredPlants.map((plant) => (
             <PlantTile
@@ -1037,7 +1136,7 @@ function DriverLogList({ logs, emptyLabel, showPlant = true }) {
 }
 
 function hasDriverLogDraftContent(draft) {
-  return ["location", "truckNumber", "driver", "source", "invCode"].some(
+  return ["truckNumber", "driver", "source", "invCode"].some(
     (field) => cleanText(draft?.[field]) !== "",
   );
 }
@@ -1070,6 +1169,26 @@ function DriverLogTextField({ label, value, onChange, listId, options = [] }) {
   );
 }
 
+function DriverLogSelectField({ label, value, onChange, options = [] }) {
+  return (
+    <label className="grid gap-2 text-sm text-white">
+      <span className="text-[11px] uppercase tracking-[0.18em] opacity-70">{label}</span>
+      <select
+        value={value}
+        onChange={onChange}
+        className="border border-white/25 bg-black px-3 py-2 text-sm text-white outline-none"
+      >
+        <option value="">select</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function DriverLogForm({
   draft,
   onDraftChange,
@@ -1077,30 +1196,36 @@ function DriverLogForm({
   saveDisabled,
   driverOptions,
   saveLabel = "save_driver_log",
+  lockLocation = false,
 }) {
   return (
     <div className="grid gap-3">
       <div className="border border-white/25 px-3 py-3 text-sm text-white">
         plant {draft.plantId ?? "none_selected"}
       </div>
-      <DriverLogTextField
-        label="location"
-        value={draft.location}
-        listId={`driver-log-location-${draft.plantId ?? "none"}`}
-        options={driverOptions.locations}
-        onChange={(event) => onDraftChange("location", event.target.value)}
-      />
-      <DriverLogTextField
+      {lockLocation ? (
+        <div className="border border-white/25 px-3 py-3 text-sm text-white">
+          <div className="text-[11px] uppercase tracking-[0.18em] opacity-70">location</div>
+          <div className="mt-2 font-medium">{draft.location || "-"}</div>
+        </div>
+      ) : (
+        <DriverLogTextField
+          label="location"
+          value={draft.location}
+          listId={`driver-log-location-${draft.plantId ?? "none"}`}
+          options={driverOptions.locations}
+          onChange={(event) => onDraftChange("location", event.target.value)}
+        />
+      )}
+      <DriverLogSelectField
         label="truck number"
         value={draft.truckNumber}
-        listId={`driver-log-truck-${draft.plantId ?? "none"}`}
         options={driverOptions.truckNumbers}
         onChange={(event) => onDraftChange("truckNumber", event.target.value)}
       />
-      <DriverLogTextField
+      <DriverLogSelectField
         label="driver"
         value={draft.driver}
-        listId={`driver-log-driver-${draft.plantId ?? "none"}`}
         options={driverOptions.driverNames}
         onChange={(event) => onDraftChange("driver", event.target.value)}
       />
@@ -1125,38 +1250,11 @@ function DriverLogForm({
   );
 }
 
-function PlantDetailsPanel({
-  plant,
-  driverLogs,
-  driverLogDraft,
-  driverOptions,
-  onDraftChange,
-  onSaveDriverLog,
-  onOpenDriverLogPage,
-  onClose,
-}) {
-  if (!plant) {
-    return (
-      <div className="self-start xl:sticky xl:top-6 xl:z-10">
-        <CliSection title="Selected plant">
-          <div className="space-y-3 text-sm text-white/75">
-            <div className="border border-dashed border-white/25 p-4">
-              Pick a plant from <span className="text-white">Act now</span>,{" "}
-              <span className="text-white">Watch next</span>, or{" "}
-              <span className="text-white">All plants</span> to open the decision detail.
-            </div>
-          </div>
-        </CliSection>
-      </div>
-    );
-  }
+function PlantDetailsPanel({ plant, onOpenDriverLogPage, onClose }) {
+  if (!plant) return null;
 
   const materialRows = materialRowsForDisplay(plant.materials);
   const negativeDiffCount = materialRows.filter((row) => row.diff !== null && row.diff < 0).length;
-  const plantLogs = driverLogs.filter((entry) => Number(entry.plantId) === Number(plant.id));
-  const detailDraft =
-    driverLogDraft.plantId === plant.id ? driverLogDraft : createDriverLogDraft(plant.id);
-  const saveDisabled = !hasDriverLogDraftContent(detailDraft);
   const decision = buildPlantDecision(plant);
   const riskFlags = formatRiskFlags(getPlantRiskStatus(plant));
   const areaLabel = formatRegionLabel(plant.region);
@@ -1215,7 +1313,6 @@ function PlantDetailsPanel({
             <Metric label="Yardage" value={formatNumber(plant.yardage, 1)} />
             <Metric label="Materials shown" value={materialRows.length} />
             <Metric label="Negative diffs" value={negativeDiffCount} />
-            <Metric label="Saved logs" value={plantLogs.length} />
           </div>
 
           <div>
@@ -1224,33 +1321,62 @@ function PlantDetailsPanel({
               <MaterialSnapshot materials={plant.materials} />
             </div>
           </div>
+        </div>
+      </CliSection>
+    </div>
+  );
+}
 
-          <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-            <div className="border border-white/15 p-4">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-white">
-                <div className="font-medium">Driver input</div>
-                <div className="text-white/55">save here</div>
-              </div>
-              <DriverLogForm
-                draft={detailDraft}
-                driverOptions={driverOptions}
-                onDraftChange={onDraftChange}
-                onSave={onSaveDriverLog}
-                saveDisabled={saveDisabled}
-              />
-            </div>
+function MainPageDriverLogPanel({
+  plant,
+  driverLogs,
+  driverLogDraft,
+  driverOptions,
+  onDraftChange,
+  onSaveDriverLog,
+}) {
+  if (!plant) return null;
 
-            <div className="border border-white/15 p-4">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-white">
-                <div className="font-medium">Saved logs</div>
-                <div className="text-white/55">shared with log page</div>
-              </div>
-              <DriverLogList
-                logs={plantLogs}
-                showPlant={false}
-                emptyLabel="No saved driver logs for this plant yet."
-              />
+  const plantLogs = driverLogs.filter((entry) => Number(entry.plantId) === Number(plant.id));
+  const location = driverLogLocationForPlant(plant);
+  const detailDraft =
+    driverLogDraft.plantId === plant.id
+      ? { ...driverLogDraft, location }
+      : createDriverLogDraft(plant.id, location);
+  const saveDisabled = !hasDriverLogDraftContent(detailDraft);
+
+  return (
+    <div className="self-start xl:sticky xl:top-6 xl:z-10">
+      <CliSection
+        title={`Driver log :: Plant ${plant.id}`}
+        right={<div className="text-sm text-white/60">{plantLogs.length} saved</div>}
+      >
+        <div className="max-h-[calc(100vh-250px)] space-y-4 overflow-y-auto pr-1">
+          <div className="border border-white/15 p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-white">
+              <div className="font-medium">New log entry</div>
+              <div className="text-white/55">{location}</div>
             </div>
+            <DriverLogForm
+              draft={detailDraft}
+              driverOptions={driverOptions}
+              onDraftChange={onDraftChange}
+              onSave={onSaveDriverLog}
+              saveDisabled={saveDisabled}
+              lockLocation
+            />
+          </div>
+
+          <div className="border border-white/15 p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-white">
+              <div className="font-medium">Saved logs</div>
+              <div className="text-white/55">for plant {plant.id}</div>
+            </div>
+            <DriverLogList
+              logs={plantLogs}
+              showPlant={false}
+              emptyLabel="No saved driver logs for this plant yet."
+            />
           </div>
         </div>
       </CliSection>
@@ -1479,11 +1605,68 @@ function DriverLogPage({
         <DriverLogList
           logs={plantLogs}
           emptyLabel={
-            draft.plantId === null
-              ? "Select a plant from the cockpit first."
-              : "No saved logs for this plant yet."
+            draft.plantId === null ? "No saved logs yet." : "No saved logs for this plant yet."
           }
         />
+      </CliSection>
+    </div>
+  );
+}
+
+function DriversPage({
+  drivers,
+  showDriverStatus,
+  onToggleDriverStatus,
+  plant,
+  draft,
+  driverOptions,
+  onDraftChange,
+  onSave,
+  logs,
+  onOpenPlant,
+}) {
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <DriverStatusPanel
+        isOpen={showDriverStatus}
+        onToggle={onToggleDriverStatus}
+        drivers={drivers}
+        variant="page"
+      />
+      <DriverLogPage
+        plant={plant}
+        draft={draft}
+        driverOptions={driverOptions}
+        onDraftChange={onDraftChange}
+        onSave={onSave}
+        logs={logs}
+        onOpenPlant={onOpenPlant}
+      />
+    </div>
+  );
+}
+
+function NotesPage() {
+  return (
+    <div className="grid gap-4">
+      <CliSection
+        title="Notes"
+        right={<div className="text-sm text-white/60">{DISPATCH_NOTES.length} items</div>}
+      >
+        <div className="space-y-3">
+          {DISPATCH_NOTES.map((note, index) => (
+            <div key={note.id} className="border border-white/15 bg-white/[0.02] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-white/50">
+                  note {index + 1}
+                </div>
+                <div className="text-[11px] text-white/40">{note.id}</div>
+              </div>
+              <div className="mt-2 text-base font-semibold text-white">{note.title}</div>
+              <div className="mt-2 text-sm leading-6 text-white/75">{note.body}</div>
+            </div>
+          ))}
+        </div>
       </CliSection>
     </div>
   );
@@ -1497,6 +1680,8 @@ export default function DispatchCockpitLive() {
   const [search, setSearch] = useState("");
   const [selectedRegion, setSelectedRegion] = useState("all");
   const [selectedPlantId, setSelectedPlantId] = useState(null);
+  const [showActNow, setShowActNow] = useState(true);
+  const [showWatchNext, setShowWatchNext] = useState(true);
   const [showPlantTotals, setShowPlantTotals] = useState(true);
   const [showDriverStatus, setShowDriverStatus] = useState(true);
   const [driverLogs, setDriverLogs] = useState(loadDriverLogs);
@@ -1544,6 +1729,7 @@ export default function DispatchCockpitLive() {
         .sort((left, right) => right.score - left.score),
     [filteredPlants],
   );
+  const hasActNow = actNowDecisions.length > 0;
 
   const watchDecisions = useMemo(
     () =>
@@ -1612,17 +1798,24 @@ export default function DispatchCockpitLive() {
   }, [refreshFromDesktop]);
 
   useEffect(() => {
-    if (selectedPlantId === null) return;
+    if (page !== "cockpit" || selectedPlantId === null) return;
+    const nextPlant = data.plants.find((plant) => plant.id === selectedPlantId) ?? null;
+    const nextLocation = driverLogLocationForPlant(nextPlant);
     setDriverLogDraft((current) =>
-      current.plantId === selectedPlantId ? current : createDriverLogDraft(selectedPlantId),
+      current.plantId === selectedPlantId
+        ? { ...current, location: nextLocation }
+        : createDriverLogDraft(selectedPlantId, nextLocation),
     );
-  }, [selectedPlantId]);
+  }, [page, selectedPlantId, data]);
 
   function openDriverLogForPlant(plant) {
+    const nextLocation = driverLogLocationForPlant(plant);
     setDriverLogDraft((current) =>
-      current.plantId === plant.id ? current : createDriverLogDraft(plant.id),
+      current.plantId === plant.id
+        ? { ...current, location: nextLocation }
+        : createDriverLogDraft(plant.id, nextLocation),
     );
-    setPage("driver_logs");
+    setPage("drivers");
   }
 
   function updateDriverLogDraft(field, value) {
@@ -1647,7 +1840,7 @@ export default function DispatchCockpitLive() {
     };
 
     setDriverLogs((current) => [nextEntry, ...current]);
-    setDriverLogDraft(createDriverLogDraft(driverLogDraft.plantId));
+    setDriverLogDraft(createDriverLogDraft(driverLogDraft.plantId, driverLogDraft.location));
   }
 
   function openPlantFromLogPage(plantId) {
@@ -1669,15 +1862,26 @@ export default function DispatchCockpitLive() {
         <div className="border border-white/15 bg-white/[0.02] px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-base font-semibold text-white">Dispatch cockpit</div>
+              <div className="text-base font-semibold text-white">Robertson&apos;s Transport</div>
               <div className="mt-1 text-sm text-white/55">
-                Live materials, plant risk, and driver assignments
+                Powder train dispatch
               </div>
             </div>
             <div className="flex flex-col gap-2 sm:items-end">
-            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <CliButton active={page === "cockpit"} onClick={() => setPage("cockpit")}>
-                  Cockpit
+                  MAIN
+                </CliButton>
+                <CliButton
+                  active={page === "decisions"}
+                  onClick={() => setPage("decisions")}
+                  className={
+                    hasActNow && page !== "decisions"
+                      ? "animate-pulse border-rose-400/60 bg-rose-500/15 text-rose-100 hover:bg-rose-500/20"
+                      : ""
+                  }
+                >
+                  Act Now / Watch Next{hasActNow ? ` (${actNowDecisions.length})` : ""}
                 </CliButton>
                 <CliButton
                   active={page === "plant_totals"}
@@ -1691,14 +1895,20 @@ export default function DispatchCockpitLive() {
                 <CliButton active={page === "material_usage"} onClick={() => setPage("material_usage")}>
                   Material Usage
                 </CliButton>
-                <CliButton active={page === "drivers"} onClick={() => setPage("drivers")}>
+                <CliButton
+                  active={page === "drivers"}
+                  onClick={() => {
+                    setDriverLogDraft(createDriverLogDraft(null));
+                    setPage("drivers");
+                  }}
+                >
                   Drivers
-                </CliButton>
-                <CliButton active={page === "driver_logs"} onClick={() => setPage("driver_logs")}>
-                  Driver logs
                 </CliButton>
                 <CliButton onClick={() => void refreshFromDesktop()} disabled={running}>
                   {running ? "Refreshing..." : "Refresh data"}
+                </CliButton>
+                <CliButton active={page === "notes"} onClick={() => setPage("notes")}>
+                  Notes
                 </CliButton>
               </div>
 
@@ -1748,11 +1958,6 @@ export default function DispatchCockpitLive() {
             <div className="border border-white/15 px-3 py-2 text-sm text-white/65">
               Updated {new Date(data.meta?.generatedAt ?? Date.now()).toLocaleString()}
             </div>
-            {selectedPlant ? (
-              <div className="border border-white/15 px-3 py-2 text-sm text-white/65">
-                Selected plant {selectedPlant.id}
-              </div>
-            ) : null}
           </div>
         </div>
 
@@ -1764,23 +1969,6 @@ export default function DispatchCockpitLive() {
 
         {page === "cockpit" ? (
           <div className="flex flex-col gap-4">
-            <div className="grid gap-4 xl:grid-cols-2">
-              <DecisionQueueSection
-                title="Act now"
-                items={actNowDecisions}
-                selectedPlantId={selectedPlantId}
-                onSelectPlant={setSelectedPlantId}
-                emptyLabel="No plants currently need immediate action."
-              />
-              <DecisionQueueSection
-                title="Watch next"
-                items={watchDecisions}
-                selectedPlantId={selectedPlantId}
-                onSelectPlant={setSelectedPlantId}
-                emptyLabel="No near-term watch items in the current filter."
-              />
-            </div>
-
             <PlantRibbon
               filteredPlants={filteredPlants}
               selectedPlant={selectedPlant}
@@ -1792,17 +1980,38 @@ export default function DispatchCockpitLive() {
               selectedRegion={selectedRegion}
               setSelectedRegion={setSelectedRegion}
             />
-            <PlantDetailsPanel
-              plant={selectedPlant}
-              driverLogs={driverLogs}
-              driverLogDraft={driverLogDraft}
-              driverOptions={driverOptions}
-              onDraftChange={updateDriverLogDraft}
-              onSaveDriverLog={saveDriverLog}
-              onClose={() => setSelectedPlantId(null)}
-              onOpenDriverLogPage={openDriverLogForPlant}
-            />
+            {selectedPlant ? (
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+                <PlantDetailsPanel
+                  plant={selectedPlant}
+                  onClose={() => setSelectedPlantId(null)}
+                  onOpenDriverLogPage={openDriverLogForPlant}
+                />
+                <MainPageDriverLogPanel
+                  plant={selectedPlant}
+                  driverLogs={driverLogs}
+                  driverLogDraft={driverLogDraft}
+                  driverOptions={driverOptions}
+                  onDraftChange={updateDriverLogDraft}
+                  onSaveDriverLog={saveDriverLog}
+                />
+              </div>
+            ) : null}
           </div>
+        ) : page === "decisions" ? (
+          <DecisionsPage
+            actNowDecisions={actNowDecisions}
+            watchDecisions={watchDecisions}
+            showActNow={showActNow}
+            setShowActNow={setShowActNow}
+            showWatchNext={showWatchNext}
+            setShowWatchNext={setShowWatchNext}
+            selectedPlantId={selectedPlantId}
+            setSelectedPlantId={setSelectedPlantId}
+            selectedPlant={selectedPlant}
+            onOpenDriverLogPage={openDriverLogForPlant}
+            onClosePlant={() => setSelectedPlantId(null)}
+          />
         ) : page === "plant_totals" ? (
           <PlantTotalsSection
             isOpen={showPlantTotals}
@@ -1812,14 +2021,10 @@ export default function DispatchCockpitLive() {
         ) : page === "material_usage" ? (
           <MaterialUsageSection rows={filteredPlants} />
         ) : page === "drivers" ? (
-          <DriverStatusPanel
-            isOpen={showDriverStatus}
-            onToggle={() => setShowDriverStatus((current) => !current)}
+          <DriversPage
             drivers={drivers}
-            variant="page"
-          />
-        ) : (
-          <DriverLogPage
+            showDriverStatus={showDriverStatus}
+            onToggleDriverStatus={() => setShowDriverStatus((current) => !current)}
             plant={draftPlant}
             draft={driverLogDraft}
             driverOptions={driverOptions}
@@ -1828,7 +2033,10 @@ export default function DispatchCockpitLive() {
             logs={driverLogs}
             onOpenPlant={openPlantFromLogPage}
           />
-        )}
+        ) : page === "notes" ? (
+          <NotesPage />
+        ) : null
+        }
       </div>
     </main>
   );
