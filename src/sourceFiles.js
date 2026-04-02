@@ -3,4 +3,6 @@ export const SOURCE_FILES = {
   adjustments: "C:/Users/destr/Downloads/imager/7/2.xlsx",
   material: "C:/Users/destr/Downloads/material_requirements_extracted_corrected.csv",
   aggAssignments: "C:/Users/destr/Downloads/imager/7/Agg Truck Assign.xlsx",
+  nightAssignments: "C:/Users/destr/Downloads/imager/7/32.xlsx",
+  sourceToPlant: "C:/Users/destr/Downloads/imager/7/Cement Source to Plant sheet.xlsx",
 };

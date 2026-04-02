@@ -25,6 +25,86 @@ const MATERIAL_USAGE_PLACEHOLDERS = {
   lc3: 3.2,
 };
 
+const LIVE_HEADER_USAGE = {
+  cement: { used: 89, total: 189 },
+  flyash: { used: 4, total: 10 },
+};
+const DELIVERED_YARDAGE = 10980;
+
+const LIVE_DISPATCH_PLACEHOLDERS = {
+  1: { inboundTrucks: 1, nextEtaMinutes: 22, coverageMinutes: 36, additionalTrucksNeeded: 0 },
+  2: { inboundTrucks: 2, nextEtaMinutes: 14, coverageMinutes: 58, additionalTrucksNeeded: 0 },
+  3: { inboundTrucks: 1, nextEtaMinutes: 19, coverageMinutes: 34, additionalTrucksNeeded: 0 },
+  4: { inboundTrucks: 1, nextEtaMinutes: 17, coverageMinutes: 26, additionalTrucksNeeded: 0 },
+  5: { inboundTrucks: 2, nextEtaMinutes: 16, coverageMinutes: 44, additionalTrucksNeeded: 0 },
+  6: { inboundTrucks: 1, nextEtaMinutes: 26, coverageMinutes: 12, additionalTrucksNeeded: 2 },
+};
+
+const SOURCE_ALLOCATION_DATA = {
+  cement: [
+    { code: "MCC-07", allocation: 136, dayPicked: 44, nightPicked: 18 },
+    { code: "MLB-27", allocation: 124, dayPicked: 39, nightPicked: 16 },
+    { code: "CMX-21", allocation: 118, dayPicked: 37, nightPicked: 14 },
+    { code: "CMX-12", allocation: 102, dayPicked: 31, nightPicked: 12 },
+    { code: "CMX-5", allocation: 96, dayPicked: 28, nightPicked: 10 },
+    { code: "CPC-89", allocation: 148, dayPicked: 46, nightPicked: 19 },
+    { code: "CPC-25", allocation: 111, dayPicked: 34, nightPicked: 13 },
+    { code: "LEHIGH-28", allocation: 132, dayPicked: 42, nightPicked: 17 },
+    { code: "CPC-23", allocation: 108, dayPicked: 32, nightPicked: 12 },
+    { code: "CPC-116", allocation: 126, dayPicked: 40, nightPicked: 15 },
+    { code: "CPC-23-1L", allocation: 88, dayPicked: 24, nightPicked: 9 },
+    { code: "CPC-89-1L", allocation: 92, dayPicked: 27, nightPicked: 11 },
+    { code: "NATL-17", allocation: 116, dayPicked: 36, nightPicked: 14 },
+    { code: "LEHIGH-80", allocation: 138, dayPicked: 45, nightPicked: 18 },
+  ],
+  flyash: [
+    { code: "ECO-05", allocation: 84, dayPicked: 28, nightPicked: 9 },
+    { code: "SRMG-38", allocation: 72, dayPicked: 24, nightPicked: 8 },
+  ],
+};
+const CEMENT_SOURCE_CODE_LIST = SOURCE_ALLOCATION_DATA.cement.map((row) => row.code);
+const DISPATCH_CEMENT_SOURCE_CODE_LIST = CEMENT_SOURCE_CODE_LIST.filter(
+  (code) => !code.endsWith("-1L"),
+);
+const FLYASH_SOURCE_CODE_LIST = SOURCE_ALLOCATION_DATA.flyash.map((row) => row.code);
+const DRIVER_LOG_SOURCE_OPTIONS = [
+  ...DISPATCH_CEMENT_SOURCE_CODE_LIST,
+  ...FLYASH_SOURCE_CODE_LIST,
+];
+const DRIVER_LOG_INV_CODE_OPTIONS = ["1", "2", "142"];
+const CEMENT_SOURCE_CODES = new Set(CEMENT_SOURCE_CODE_LIST);
+const FLYASH_SOURCE_CODES = new Set(FLYASH_SOURCE_CODE_LIST);
+const DISPATCH_SOURCE_CODES = new Set(DRIVER_LOG_SOURCE_OPTIONS);
+const SOURCE_CODE_NUMERIC_ALIASES = {
+  4: "MCC-04",
+  10: "CPC-10",
+};
+const SOURCE_ALLOCATION_RECORDS = [
+  ...SOURCE_ALLOCATION_DATA.cement.map((row) => ({ ...row, materialKey: "cement" })),
+  ...SOURCE_ALLOCATION_DATA.flyash.map((row) => ({ ...row, materialKey: "flyash" })),
+];
+const SOURCE_ALLOCATION_BY_CODE = new Map(
+  SOURCE_ALLOCATION_RECORDS.map((row) => [row.code, row]),
+);
+
+const DRIVER_GROUP_ORDER = ["rialto", "off_site", "nevada"];
+const DRIVER_GROUP_LABELS = {
+  rialto: "Rialto",
+  off_site: "Off-Site",
+  nevada: "Nevada",
+};
+const DRIVER_SHIFT_ORDER = ["day", "night"];
+const DRIVER_SHIFT_LABELS = {
+  day: "Day shift",
+  night: "Night shift",
+};
+const PLANT_SORT_OPTIONS = [
+  { key: "plant_id", label: "Plant ID" },
+  { key: "urgency", label: "Urgency" },
+  { key: "start_time", label: "Start time" },
+  { key: "area", label: "Area" },
+];
+
 const DISPATCH_NOTES = [
   {
     id: "warning-threshold-replenishment-trucks",
@@ -36,17 +116,18 @@ const DISPATCH_NOTES = [
 const UI_SCALE = 0.92;
 
 const DEMO_DRIVERS = [
-  { id: "d01", name: "driver_01", status: "available", location: "rialto_yard" },
-  { id: "d02", name: "driver_02", status: "to_source", location: "lucerne_valley" },
-  { id: "d03", name: "driver_03", status: "at_plant", location: "plant_02" },
-  { id: "d04", name: "driver_04", status: "returning", location: "i-15_sb" },
-  { id: "d05", name: "driver_05", status: "off_shift", location: "-" },
-  { id: "d06", name: "driver_06", status: "available", location: "fontana_yard" },
-  { id: "d07", name: "driver_07", status: "to_plant", location: "plant_05" },
-  { id: "d08", name: "driver_08", status: "break", location: "barstow" },
+  { id: "d01", name: "driver_01", status: "available", location: "rialto_yard", shift: "day" },
+  { id: "d02", name: "driver_02", status: "to_source", location: "lucerne_valley", shift: "day" },
+  { id: "d03", name: "driver_03", status: "at_plant", location: "plant_02", shift: "day" },
+  { id: "d04", name: "driver_04", status: "returning", location: "i-15_sb", shift: "day" },
+  { id: "d05", name: "driver_05", status: "off_shift", location: "-", shift: "day" },
+  { id: "d06", name: "driver_06", status: "available", location: "fontana_yard", shift: "day" },
+  { id: "d07", name: "driver_07", status: "to_plant", location: "plant_05", shift: "day" },
+  { id: "d08", name: "driver_08", status: "break", location: "barstow", shift: "day" },
 ];
 
 const DRIVER_LOG_STORAGE_KEY = "dispatch-cockpit-driver-logs-v1";
+const END_OF_SHIFT_NOTES_STORAGE_KEY = "dispatch-cockpit-end-of-shift-notes-v1";
 
 function createDriverLogDraft(plantId = null, location = "") {
   return {
@@ -59,19 +140,336 @@ function createDriverLogDraft(plantId = null, location = "") {
   };
 }
 
+function extractSourceCodeNumber(code) {
+  const match = cleanText(code).toUpperCase().match(/(\d+)(?!.*\d)/);
+  return match ? String(Number(match[1])) : null;
+}
+
+function findSourceCodeByNumber(numberText, sourceCodes) {
+  const normalizedNumber = cleanText(numberText);
+  if (!normalizedNumber || !/^\d+$/.test(normalizedNumber)) return null;
+
+  const numericKey = String(Number(normalizedNumber));
+  return (
+    sourceCodes.find((code) => extractSourceCodeNumber(code) === numericKey) ?? null
+  );
+}
+
+function normalizeSourceCode(source, preferredMaterialKey = "cement") {
+  const normalized = cleanText(source).toUpperCase();
+  if (!normalized) return "";
+
+  if (normalized.endsWith("-1L")) {
+    const baseCode = normalized.replace(/-1L$/, "");
+    if (DISPATCH_SOURCE_CODES.has(baseCode)) return baseCode;
+  }
+
+  if (DISPATCH_SOURCE_CODES.has(normalized)) return normalized;
+  if (CEMENT_SOURCE_CODES.has(normalized)) return normalized.replace(/-1L$/, "");
+  if (FLYASH_SOURCE_CODES.has(normalized)) return normalized;
+
+  const compactMatch =
+    DRIVER_LOG_SOURCE_OPTIONS.find(
+      (code) => code.replace(/[^A-Z0-9]/g, "") === normalized.replace(/[^A-Z0-9]/g, ""),
+    ) ?? null;
+  if (compactMatch) return compactMatch;
+
+  const numericAlias = SOURCE_CODE_NUMERIC_ALIASES[String(Number(normalized))];
+  if (numericAlias) return numericAlias;
+
+  const preferredCodes =
+    preferredMaterialKey === "flyash" ? FLYASH_SOURCE_CODE_LIST : DISPATCH_CEMENT_SOURCE_CODE_LIST;
+
+  return (
+    findSourceCodeByNumber(normalized, preferredCodes) ??
+    findSourceCodeByNumber(normalized, DRIVER_LOG_SOURCE_OPTIONS) ??
+    normalized
+  );
+}
+
+function normalizeStoredDriverLogEntry(entry) {
+  return {
+    ...entry,
+    plantId: Number.isInteger(Number(entry?.plantId)) ? Number(entry.plantId) : null,
+    location: cleanText(entry?.location),
+    truckNumber: cleanText(entry?.truckNumber),
+    driver: cleanText(entry?.driver),
+    source: normalizeSourceCode(entry?.source),
+    invCode: cleanText(entry?.invCode),
+    savedAt: cleanText(entry?.savedAt),
+    updatedAt: cleanText(entry?.updatedAt),
+  };
+}
+
+function createDriverLogDraftFromEntry(entry) {
+  return {
+    plantId: Number.isInteger(Number(entry?.plantId)) ? Number(entry.plantId) : null,
+    location: cleanText(entry?.location),
+    truckNumber: cleanText(entry?.truckNumber),
+    driver: cleanText(entry?.driver),
+    source: normalizeSourceCode(entry?.source),
+    invCode: cleanText(entry?.invCode),
+  };
+}
+
 function loadDriverLogs() {
   try {
     const raw = window.localStorage.getItem(DRIVER_LOG_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(normalizeStoredDriverLogEntry) : [];
   } catch {
     return [];
   }
 }
 
+function loadEndOfShiftNotes() {
+  try {
+    const raw = window.localStorage.getItem(END_OF_SHIFT_NOTES_STORAGE_KEY);
+    return typeof raw === "string" ? raw : "";
+  } catch {
+    return "";
+  }
+}
+
+function createEmptySourceRules() {
+  return {
+    loaded: false,
+    sheetName: "none",
+    byPlant: new Map(),
+    bySource: new Map(),
+  };
+}
+
+function parseSheetDateValue(sheetName) {
+  const match = cleanText(sheetName).match(/^(\d{1,2})-(\d{1,2})-(\d{2,4})$/);
+  if (!match) return null;
+
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  const rawYear = Number(match[3]);
+  const year = rawYear < 100 ? 2000 + rawYear : rawYear;
+  const value = new Date(year, month - 1, day).getTime();
+  return Number.isFinite(value) ? value : null;
+}
+
+function pickLatestSourceRuleSheet(workbook) {
+  return [...workbook.SheetNames].sort((left, right) => {
+    const leftValue = parseSheetDateValue(left);
+    const rightValue = parseSheetDateValue(right);
+
+    if (leftValue !== null && rightValue !== null && leftValue !== rightValue) {
+      return rightValue - leftValue;
+    }
+
+    if (leftValue !== null && rightValue === null) return -1;
+    if (leftValue === null && rightValue !== null) return 1;
+    return right.localeCompare(left);
+  })[0];
+}
+
+function normalizeSourceSheetCode(label, materialKey) {
+  const normalizedLabel = cleanText(label);
+  const upper = normalizedLabel.toUpperCase();
+
+  if (!upper) return "";
+
+  if (materialKey === "flyash") {
+    if (upper.includes("ECO")) return "ECO-05";
+    if (upper.includes("SRMG")) return "SRMG-38";
+  }
+
+  const numericPrefix = upper.match(/^(\d{1,3})\b/);
+  if (numericPrefix) {
+    const numericKey = String(Number(numericPrefix[1]));
+    const matchingKnownCode =
+      DRIVER_LOG_SOURCE_OPTIONS.find((code) => extractSourceCodeNumber(code) === numericKey) ?? null;
+    if (matchingKnownCode) return matchingKnownCode;
+
+    if (upper.includes("MITSUBISHI")) return `MCC-${numericPrefix[1].padStart(2, "0")}`;
+    if (upper.includes("CAL PORTLAND")) return `CPC-${numericPrefix[1].padStart(2, "0")}`;
+    if (upper.includes("CEMEX")) return `CMX-${numericPrefix[1].padStart(2, "0")}`;
+    if (upper.includes("NATIONAL")) return `NATL-${numericPrefix[1].padStart(2, "0")}`;
+    if (upper.includes("TEHACHAPI")) return `LEHIGH-${numericPrefix[1].padStart(2, "0")}`;
+  }
+
+  return upper;
+}
+
+function parseSourceToPlantWorkbook(sourceRulesBuffer) {
+  if (!sourceRulesBuffer) return createEmptySourceRules();
+
+  const workbook = XLSX.read(sourceRulesBuffer, { type: "array" });
+  const sheetName = pickLatestSourceRuleSheet(workbook);
+  const rows = getSheetRows(workbook, sheetName, 0);
+  const byPlant = new Map();
+  const bySource = new Map();
+  let materialKey = "cement";
+
+  rows.forEach((row) => {
+    const firstCell = cleanText(row[0]);
+    const upper = firstCell.toUpperCase();
+
+    if (!firstCell) return;
+    if (upper.includes("FLY-ASH SOURCE TO PLANT")) {
+      materialKey = "flyash";
+      return;
+    }
+    if (upper.includes("CEMENT SOURCE TO PLANT")) {
+      materialKey = "cement";
+      return;
+    }
+    if (upper === "SOURCE:" || upper === "PLANT:") return;
+
+    const plantIds = row
+      .slice(2)
+      .map((value) => toInteger(value))
+      .filter((value) => Number.isInteger(value));
+
+    if (plantIds.length === 0) return;
+
+    const sourceCode = normalizeSourceSheetCode(firstCell, materialKey);
+    if (!sourceCode) return;
+
+    if (!bySource.has(sourceCode)) {
+      bySource.set(sourceCode, {
+        source: sourceCode,
+        materialKey,
+        plantIds: [],
+        rawLabel: firstCell,
+      });
+    }
+
+    const sourceEntry = bySource.get(sourceCode);
+    sourceEntry.materialKey = materialKey;
+    sourceEntry.rawLabel = firstCell;
+    sourceEntry.plantIds = uniqueCleanValues(
+      [...sourceEntry.plantIds.map(String), ...plantIds.map(String)],
+    ).map((value) => Number(value));
+
+    plantIds.forEach((plantId) => {
+      if (!byPlant.has(plantId)) {
+        byPlant.set(plantId, {
+          cement: [],
+          flyash: [],
+        });
+      }
+
+      const plantEntry = byPlant.get(plantId);
+      if (!plantEntry[materialKey].includes(sourceCode)) {
+        plantEntry[materialKey].push(sourceCode);
+      }
+    });
+  });
+
+  return {
+    loaded: byPlant.size > 0,
+    sheetName,
+    byPlant,
+    bySource,
+  };
+}
+
+function getFallbackSourceAllocationSnapshot(sourceCode, materialKey = "cement") {
+  const numericKey = Number(extractSourceCodeNumber(sourceCode) || 0);
+  const allocation = materialKey === "flyash" ? 72 + (numericKey % 4) * 8 : 96 + (numericKey % 6) * 10;
+  const dayPicked = Math.floor(allocation * 0.32);
+  const nightPicked = Math.floor(allocation * 0.14);
+  return {
+    code: sourceCode,
+    materialKey,
+    allocation,
+    dayPicked,
+    nightPicked,
+    pickedUp: dayPicked + nightPicked,
+    left: Math.max(0, allocation - dayPicked - nightPicked),
+    isFallback: true,
+  };
+}
+
+function getSourceAllocationSnapshot(sourceCode, materialKey = null) {
+  const normalizedSource = normalizeSourceCode(sourceCode, materialKey || "cement");
+  const known = SOURCE_ALLOCATION_BY_CODE.get(normalizedSource);
+  if (known) {
+    return {
+      ...known,
+      pickedUp: known.dayPicked + known.nightPicked,
+      left: Math.max(0, known.allocation - known.dayPicked - known.nightPicked),
+      isFallback: false,
+    };
+  }
+
+  return getFallbackSourceAllocationSnapshot(normalizedSource, materialKey || getSourceMaterialKey(normalizedSource) || "cement");
+}
+
 function driverLogLocationForPlant(plant) {
   return plant ? `Plant ${plant.id}` : "";
+}
+
+function getLiveDispatchSnapshot(plant) {
+  const fallback = {
+    inboundTrucks: (plant.id % 3) + 1,
+    nextEtaMinutes: 12 + (plant.id % 5) * 4,
+    coverageMinutes: 20 + (plant.id % 4) * 8,
+    additionalTrucksNeeded: plant.id % 6 === 0 ? 1 : 0,
+  };
+
+  const snapshot = LIVE_DISPATCH_PLACEHOLDERS[plant.id] ?? fallback;
+
+  return {
+    ...snapshot,
+    nextEtaLabel: `${snapshot.nextEtaMinutes} min`,
+    coverageLabel: `${snapshot.coverageMinutes} min`,
+    inboundLabel: `${snapshot.inboundTrucks} truck${snapshot.inboundTrucks === 1 ? "" : "s"}`,
+  };
+}
+
+function getDriverGroupKey(driver) {
+  const location = cleanText(driver?.location).toLowerCase();
+
+  if (location.includes("rialto")) return "rialto";
+  if (
+    location.includes("nevada") ||
+    location.includes("vegas") ||
+    location.includes("henderson")
+  ) {
+    return "nevada";
+  }
+
+  return "off_site";
+}
+
+function getDriverShiftKey(driver) {
+  return driver?.shift === "night" ? "night" : "day";
+}
+
+function getPlantDriverGroupKey(plant) {
+  const region = cleanText(plant?.region);
+  if (region === "nevada") return "nevada";
+  if (region === "inland empire") return "rialto";
+  return "off_site";
+}
+
+function getPlantDriverGroupLabel(plant) {
+  return DRIVER_GROUP_LABELS[getPlantDriverGroupKey(plant)] ?? "Off-Site";
+}
+
+function parsePlantSearchId(value) {
+  const normalized = cleanText(value).toLowerCase().replace(/[_-]+/g, " ");
+  if (!normalized) return null;
+
+  const match = normalized.match(/^(?:plant|plt)?\s*0*(\d{1,3})$/);
+  if (!match) return null;
+
+  const plantId = Number(match[1]);
+  return Number.isInteger(plantId) ? plantId : null;
+}
+
+function locationMatchesPlantId(location, plantId) {
+  if (!Number.isInteger(plantId)) return false;
+
+  const normalized = cleanText(location).toLowerCase().replace(/[_-]+/g, " ");
+  return new RegExp(`\\bplant\\s*0*${plantId}\\b`).test(normalized);
 }
 
 function emptyMaterialSlot() {
@@ -286,14 +684,229 @@ function formatRiskFlags(riskStatus) {
   return flags;
 }
 
+function getPrimaryPlantMaterialKey(plant) {
+  return materialRowsForDisplay(plant.materials)[0]?.key ?? "cement";
+}
+
+function getPrimaryPlantMaterialLabel(plant) {
+  const materialKey = getPrimaryPlantMaterialKey(plant);
+  return MATERIAL_USAGE_LABELS[materialKey] ?? "Cement";
+}
+
+function getPlaceholderSourceCode(plant) {
+  const primaryMaterial = getPrimaryPlantMaterialKey(plant);
+  const sourceCodes =
+    primaryMaterial === "flyash" ? FLYASH_SOURCE_CODE_LIST : DISPATCH_CEMENT_SOURCE_CODE_LIST;
+
+  if (sourceCodes.length === 0) return "-";
+
+  return sourceCodes[(Math.max(plant.id, 1) - 1) % sourceCodes.length];
+}
+
+function getAllowedSourcesForPlantMaterial(sourceRules, plant, materialKey) {
+  if (!plant) {
+    return materialKey === "flyash" ? FLYASH_SOURCE_CODE_LIST : DISPATCH_CEMENT_SOURCE_CODE_LIST;
+  }
+
+  const ruleEntry = sourceRules?.byPlant?.get?.(plant.id) ?? null;
+  if (ruleEntry?.[materialKey]?.length) return ruleEntry[materialKey];
+
+  return materialKey === "flyash" ? FLYASH_SOURCE_CODE_LIST : DISPATCH_CEMENT_SOURCE_CODE_LIST;
+}
+
+function getAllowedSourceOptionsForPlant(sourceRules, plant, currentSource = "") {
+  if (!plant) {
+    return uniqueCleanValues(
+      [...DRIVER_LOG_SOURCE_OPTIONS, normalizeSourceCode(currentSource)].filter(Boolean),
+    );
+  }
+
+  const allowedSources = [];
+
+  const hasCement = hasMaterialSlotData(plant.materials?.cement);
+  const hasFlyash = hasMaterialSlotData(plant.materials?.flyash);
+
+  if (hasCement || !hasFlyash) allowedSources.push(...getAllowedSourcesForPlantMaterial(sourceRules, plant, "cement"));
+  if (hasFlyash) allowedSources.push(...getAllowedSourcesForPlantMaterial(sourceRules, plant, "flyash"));
+  if (!hasCement && !hasFlyash) {
+    allowedSources.push(...getAllowedSourcesForPlantMaterial(sourceRules, plant, "cement"));
+    allowedSources.push(...getAllowedSourcesForPlantMaterial(sourceRules, plant, "flyash"));
+  }
+
+  const normalizedCurrent = normalizeSourceCode(currentSource, getPrimaryPlantMaterialKey(plant));
+  const fallbackOptions = allowedSources.length > 0 ? allowedSources : DRIVER_LOG_SOURCE_OPTIONS;
+  return uniqueCleanValues([...fallbackOptions, normalizedCurrent].filter(Boolean));
+}
+
+function getSourceMaterialKey(sourceCode) {
+  const normalized = normalizeSourceCode(sourceCode);
+  if (!normalized) return null;
+  if (FLYASH_SOURCE_CODES.has(normalized)) return "flyash";
+  if (CEMENT_SOURCE_CODES.has(normalized) || /^(MCC|MLB|CMX|CPC|NATL|LEHIGH)-/.test(normalized)) {
+    return "cement";
+  }
+  return null;
+}
+
+function isSourceAllowedForPlant(sourceRules, plantId, sourceCode) {
+  if (!sourceRules?.loaded) return true;
+
+  const normalizedSource = normalizeSourceCode(sourceCode);
+  const materialKey = getSourceMaterialKey(normalizedSource);
+  const plantRules = sourceRules.byPlant.get(Number(plantId));
+
+  if (!normalizedSource || !materialKey || !plantRules) return true;
+  return plantRules[materialKey]?.includes(normalizedSource) ?? false;
+}
+
+function getPlantSourceLabel(plant, sourceRules = null) {
+  const allowedSources = getAllowedSourceOptionsForPlant(sourceRules, plant);
+  if (allowedSources.length > 0) return allowedSources[0];
+  return getPlaceholderSourceCode(plant);
+}
+
+function buildSourceRecommendation(plant, materialKey, sourceRules) {
+  if (!plant || !["cement", "flyash"].includes(materialKey)) {
+    return {
+      materialKey,
+      bestSource: null,
+      allowedSources: [],
+      candidates: [],
+      blocked: true,
+      blockedReason: "No source recommendation available.",
+      summaryLabel: "No source recommendation",
+    };
+  }
+
+  const materialLabel = MATERIAL_USAGE_LABELS[materialKey] ?? materialKey;
+  const allowedSources = getAllowedSourcesForPlantMaterial(sourceRules, plant, materialKey);
+  const candidates = allowedSources
+    .map((sourceCode) => getSourceAllocationSnapshot(sourceCode, materialKey))
+    .sort((left, right) => {
+      const leftAvailable = left.left > 0 ? 1 : 0;
+      const rightAvailable = right.left > 0 ? 1 : 0;
+      if (rightAvailable !== leftAvailable) return rightAvailable - leftAvailable;
+      if (right.left !== left.left) return right.left - left.left;
+      if (right.allocation !== left.allocation) return right.allocation - left.allocation;
+      return left.code.localeCompare(right.code);
+    });
+
+  const bestSource = candidates[0] ?? null;
+  if (allowedSources.length === 0) {
+    return {
+      materialKey,
+      bestSource: null,
+      allowedSources,
+      candidates,
+      blocked: true,
+      blockedReason: `No allowed ${materialLabel.toLowerCase()} source is configured for plant ${plant.id}.`,
+      summaryLabel: `No valid ${materialLabel.toLowerCase()} source`,
+    };
+  }
+
+  if (!bestSource || bestSource.left <= 0) {
+    return {
+      materialKey,
+      bestSource,
+      allowedSources,
+      candidates,
+      blocked: true,
+      blockedReason: `All allowed ${materialLabel.toLowerCase()} sources are out of allocation.`,
+      summaryLabel: `No ${materialLabel.toLowerCase()} source left`,
+    };
+  }
+
+  const alternate = candidates.find((candidate) => candidate.code !== bestSource.code && candidate.left > 0) ?? null;
+
+  return {
+    materialKey,
+    bestSource,
+    alternate,
+    allowedSources,
+    candidates,
+    blocked: false,
+    blockedReason: "",
+    summaryLabel: `${bestSource.code} (${formatNumber(bestSource.left, 0)} left)`,
+  };
+}
+
+function getMaterialLabelForLogSource(source, plant) {
+  const normalizedSource = normalizeSourceCode(source, getPrimaryPlantMaterialKey(plant));
+  if (FLYASH_SOURCE_CODES.has(normalizedSource)) return MATERIAL_USAGE_LABELS.flyash;
+  if (CEMENT_SOURCE_CODES.has(normalizedSource)) return MATERIAL_USAGE_LABELS.cement;
+  return getPrimaryPlantMaterialLabel(plant);
+}
+
+function buildInboundQueueRows(plant, drivers, driverLogs = [], sourceRules = null) {
+  const liveDispatch = getLiveDispatchSnapshot(plant);
+  const driverGroup = getPlantDriverGroupKey(plant);
+  const primaryMaterialKey = getPrimaryPlantMaterialKey(plant);
+  const sourceLabel = getPlantSourceLabel(plant, sourceRules);
+  const materialLabel = getPrimaryPlantMaterialLabel(plant);
+  const plantLogs = driverLogs.filter((entry) => Number(entry.plantId) === Number(plant.id));
+
+  if (plantLogs.length > 0) {
+    return plantLogs.map((entry, index) => ({
+      id: entry.id,
+      truck: entry.truckNumber || `TBD-${plant.id}-${index + 1}`,
+      driver: entry.driver || "Unassigned",
+      source: normalizeSourceCode(entry.source, primaryMaterialKey) || sourceLabel,
+      eta: `${Math.max(8, liveDispatch.nextEtaMinutes - 4) + index * 7} min`,
+      material: getMaterialLabelForLogSource(entry.source, plant),
+    }));
+  }
+
+  const matchingDrivers = drivers.filter(
+    (driver) => getDriverShiftKey(driver) === "day" && getDriverGroupKey(driver) === driverGroup,
+  );
+  const rowCount = Math.max(liveDispatch.inboundTrucks, 1);
+
+  return Array.from({ length: rowCount }, (_, index) => {
+    const driver = matchingDrivers[index] ?? null;
+    return {
+      id: `${plant.id}_inbound_${index + 1}`,
+      truck: driver?.assignedTruck || `TBD-${plant.id}-${index + 1}`,
+      driver: driver?.name || "Unassigned",
+      source: sourceLabel,
+      eta: `${liveDispatch.nextEtaMinutes + index * 8} min`,
+      material: materialLabel,
+    };
+  });
+}
+
 function compareMaterialPriority(left, right) {
   const diffGap = (left.diff ?? Number.POSITIVE_INFINITY) - (right.diff ?? Number.POSITIVE_INFINITY);
   if (diffGap !== 0) return diffGap;
   return (right.requiredLoads ?? 0) - (left.requiredLoads ?? 0);
 }
 
-function buildPlantDecision(plant) {
+function comparePlantsForSort(left, right, sortKey, sourceRules = null) {
+  if (sortKey === "urgency") {
+    const leftDecision = buildPlantDecision(left, sourceRules);
+    const rightDecision = buildPlantDecision(right, sourceRules);
+    const scoreGap = (rightDecision?.score ?? -1) - (leftDecision?.score ?? -1);
+    if (scoreGap !== 0) return scoreGap;
+    return left.id - right.id;
+  }
+
+  if (sortKey === "start_time") {
+    const timeGap = parseClockMinutes(getPlantStartTime(left)) - parseClockMinutes(getPlantStartTime(right));
+    if (timeGap !== 0) return timeGap;
+    return left.id - right.id;
+  }
+
+  if (sortKey === "area") {
+    const areaGap = formatRegionLabel(left.region).localeCompare(formatRegionLabel(right.region));
+    if (areaGap !== 0) return areaGap;
+    return left.id - right.id;
+  }
+
+  return left.id - right.id;
+}
+
+function buildPlantDecision(plant, sourceRules = null) {
   const rows = materialRowsForDisplay(plant.materials);
+  const liveDispatch = getLiveDispatchSnapshot(plant);
   const urgentRows = rows
     .filter((row) => row.diff !== null && row.diff < 0)
     .sort(compareMaterialPriority);
@@ -301,6 +914,13 @@ function buildPlantDecision(plant) {
   if (urgentRows.length > 0) {
     const row = urgentRows[0];
     const materialLabel = MATERIAL_USAGE_LABELS[row.key] ?? row.label;
+    const sourceRecommendation = buildSourceRecommendation(plant, row.key, sourceRules);
+    const actionLabel = sourceRecommendation.bestSource && !sourceRecommendation.blocked
+      ? `Send 1 ${materialLabel} truck from ${sourceRecommendation.bestSource.code} to Plant ${plant.id}`
+      : `Send ${materialLabel} to Plant ${plant.id}`;
+    const sourceReason = sourceRecommendation.bestSource && !sourceRecommendation.blocked
+      ? `Best source ${sourceRecommendation.bestSource.code} | ${formatNumber(sourceRecommendation.bestSource.left, 0)} left | ${sourceRecommendation.allowedSources.length} valid sources`
+      : sourceRecommendation.blockedReason;
     return {
       plantId: plant.id,
       plant,
@@ -308,11 +928,20 @@ function buildPlantDecision(plant) {
       severity: row.diff <= -1 || (row.requiredLoads ?? 0) > 0 ? "critical" : "attention",
       materialKey: row.key,
       materialLabel,
-      actionLabel: `Send ${materialLabel} to Plant ${plant.id}`,
-      reason: `Diff ${formatDiff(row.diff)} and required loads ${formatNumber(row.requiredLoads, 2)}`,
-      support: `On hand ${formatNumber(row.onHand, 2)} | current loads ${formatNumber(row.loads, 2)}`,
+      actionLabel,
+      reason: `${sourceReason} | diff ${formatDiff(row.diff)} | req ${formatNumber(row.requiredLoads, 2)}`,
+      support:
+        liveDispatch.additionalTrucksNeeded > 0
+          ? `Need ${liveDispatch.additionalTrucksNeeded} more ${materialLabel.toLowerCase()} trucks | next ETA ${liveDispatch.nextEtaLabel} | coverage ${liveDispatch.coverageLabel}${sourceRecommendation.alternate ? ` | backup ${sourceRecommendation.alternate.code}` : ""}`
+          : `${liveDispatch.inboundLabel} inbound | next ETA ${liveDispatch.nextEtaLabel} | coverage ${liveDispatch.coverageLabel}${sourceRecommendation.alternate ? ` | backup ${sourceRecommendation.alternate.code}` : ""}`,
       byTime: cleanText(row.time) || getPlantStartTime(plant),
-      score: Math.abs(row.diff ?? 0) * 100 + (row.requiredLoads ?? 0) * 10,
+      score:
+        Math.abs(row.diff ?? 0) * 100 +
+        (row.requiredLoads ?? 0) * 10 +
+        (sourceRecommendation.blocked ? 60 : 0) -
+        (sourceRecommendation.bestSource?.left ?? 0) * 0.01,
+      liveDispatch,
+      sourceRecommendation,
     };
   }
 
@@ -323,6 +952,13 @@ function buildPlantDecision(plant) {
   if (watchRows.length > 0) {
     const row = watchRows[0];
     const materialLabel = MATERIAL_USAGE_LABELS[row.key] ?? row.label;
+    const sourceRecommendation = buildSourceRecommendation(plant, row.key, sourceRules);
+    const actionLabel = sourceRecommendation.bestSource && !sourceRecommendation.blocked
+      ? `Watch ${materialLabel} at Plant ${plant.id} | next source ${sourceRecommendation.bestSource.code}`
+      : `Watch ${materialLabel} at Plant ${plant.id}`;
+    const sourceReason = sourceRecommendation.bestSource && !sourceRecommendation.blocked
+      ? `Next source ${sourceRecommendation.bestSource.code} | ${formatNumber(sourceRecommendation.bestSource.left, 0)} left`
+      : sourceRecommendation.blockedReason;
     return {
       plantId: plant.id,
       plant,
@@ -330,15 +966,179 @@ function buildPlantDecision(plant) {
       severity: row.diff <= 0.75 ? "tight" : "watch",
       materialKey: row.key,
       materialLabel,
-      actionLabel: `Watch ${materialLabel} at Plant ${plant.id}`,
-      reason: `Diff ${formatDiff(row.diff)} with on hand ${formatNumber(row.onHand, 2)}`,
-      support: `Stay ahead of start time ${cleanText(row.time) || getPlantStartTime(plant)}`,
+      actionLabel,
+      reason: `${sourceReason} | diff ${formatDiff(row.diff)} | on hand ${formatNumber(row.onHand, 2)}`,
+      support:
+        liveDispatch.additionalTrucksNeeded > 0
+          ? `Need ${liveDispatch.additionalTrucksNeeded} more ${materialLabel.toLowerCase()} trucks soon | next ETA ${liveDispatch.nextEtaLabel} | coverage ${liveDispatch.coverageLabel}${sourceRecommendation.alternate ? ` | backup ${sourceRecommendation.alternate.code}` : ""}`
+          : `${liveDispatch.inboundLabel} inbound | next ETA ${liveDispatch.nextEtaLabel} | coverage ${liveDispatch.coverageLabel}${sourceRecommendation.alternate ? ` | backup ${sourceRecommendation.alternate.code}` : ""}`,
       byTime: cleanText(row.time) || getPlantStartTime(plant),
-      score: (2 - (row.diff ?? 0)) * 50 + (row.requiredLoads ?? 0) * 10,
+      score:
+        (2 - (row.diff ?? 0)) * 50 +
+        (row.requiredLoads ?? 0) * 10 +
+        (sourceRecommendation.blocked ? 30 : 0) -
+        (sourceRecommendation.bestSource?.left ?? 0) * 0.01,
+      liveDispatch,
+      sourceRecommendation,
     };
   }
 
   return null;
+}
+
+function buildDispatchExceptions(plants, driverLogs, sourceRules) {
+  const exceptions = [];
+  const logsByPlant = new Map();
+
+  driverLogs.forEach((entry) => {
+    const plantId = Number(entry.plantId);
+    if (!Number.isInteger(plantId)) return;
+    if (!logsByPlant.has(plantId)) logsByPlant.set(plantId, []);
+    logsByPlant.get(plantId).push(entry);
+
+    if (!cleanText(entry.source)) {
+      exceptions.push({
+        id: `missing_source_${entry.id}`,
+        severity: "critical",
+        title: `Plant ${plantId} log missing source`,
+        detail: `Truck ${entry.truckNumber || "-"} / driver ${entry.driver || "-"} has no source assigned.`,
+        plantId,
+        logId: entry.id,
+      });
+    }
+
+    if (!cleanText(entry.invCode)) {
+      exceptions.push({
+        id: `missing_inv_${entry.id}`,
+        severity: "attention",
+        title: `Plant ${plantId} log missing INV code`,
+        detail: `Truck ${entry.truckNumber || "-"} / driver ${entry.driver || "-"} is missing an INV code.`,
+        plantId,
+        logId: entry.id,
+      });
+    }
+
+    if (!cleanText(entry.truckNumber)) {
+      exceptions.push({
+        id: `missing_truck_${entry.id}`,
+        severity: "attention",
+        title: `Plant ${plantId} log missing truck`,
+        detail: `Driver ${entry.driver || "-"} has no truck number on the saved log.`,
+        plantId,
+        logId: entry.id,
+      });
+    }
+
+    if (!cleanText(entry.driver)) {
+      exceptions.push({
+        id: `missing_driver_${entry.id}`,
+        severity: "attention",
+        title: `Plant ${plantId} log missing driver`,
+        detail: `Truck ${entry.truckNumber || "-"} has no driver name on the saved log.`,
+        plantId,
+        logId: entry.id,
+      });
+    }
+
+    if (cleanText(entry.source) && !isSourceAllowedForPlant(sourceRules, plantId, entry.source)) {
+      exceptions.push({
+        id: `invalid_source_${entry.id}`,
+        severity: "critical",
+        title: `Plant ${plantId} has invalid source ${entry.source}`,
+        detail: `Source ${entry.source} is not allowed for plant ${plantId} based on the source-to-plant sheet.`,
+        plantId,
+        logId: entry.id,
+      });
+    }
+  });
+
+  const truckGroups = new Map();
+  const driverGroups = new Map();
+
+  driverLogs.forEach((entry) => {
+    const truck = cleanText(entry.truckNumber);
+    const driver = cleanText(entry.driver).toLowerCase();
+    if (truck) {
+      if (!truckGroups.has(truck)) truckGroups.set(truck, []);
+      truckGroups.get(truck).push(entry);
+    }
+    if (driver) {
+      if (!driverGroups.has(driver)) driverGroups.set(driver, []);
+      driverGroups.get(driver).push(entry);
+    }
+  });
+
+  truckGroups.forEach((entries, truck) => {
+    const plantIds = uniqueCleanValues(entries.map((entry) => String(entry.plantId)));
+    if (entries.length > 1 && plantIds.length > 1) {
+      exceptions.push({
+        id: `duplicate_truck_${truck}`,
+        severity: "attention",
+        title: `Review duplicate truck ${truck}`,
+        detail: `Truck ${truck} appears on multiple plant logs: ${plantIds.join(", ")}.`,
+        plantId: Number(entries[0]?.plantId),
+        logId: entries[0]?.id ?? null,
+        relatedLogIds: entries.map((entry) => entry.id),
+      });
+    }
+  });
+
+  driverGroups.forEach((entries, driverKey) => {
+    const plantIds = uniqueCleanValues(entries.map((entry) => String(entry.plantId)));
+    const driverLabel = entries[0]?.driver || driverKey;
+    if (entries.length > 1 && plantIds.length > 1) {
+      exceptions.push({
+        id: `duplicate_driver_${driverKey}`,
+        severity: "attention",
+        title: `Review duplicate driver ${driverLabel}`,
+        detail: `${driverLabel} appears on multiple plant logs: ${plantIds.join(", ")}.`,
+        plantId: Number(entries[0]?.plantId),
+        logId: entries[0]?.id ?? null,
+        relatedLogIds: entries.map((entry) => entry.id),
+      });
+    }
+  });
+
+  plants.forEach((plant) => {
+    const riskStatus = getPlantRiskStatus(plant);
+    const plantLogs = logsByPlant.get(plant.id) ?? [];
+
+    if (riskStatus.hasRisk && plantLogs.length === 0) {
+      exceptions.push({
+        id: `risk_no_inbound_${plant.id}`,
+        severity: "critical",
+        title: `Plant ${plant.id} has risk with no inbound logged`,
+        detail: `Plant ${plant.id} is currently short on ${formatRiskFlags(riskStatus).join(" / ")} and has no inbound dispatch log yet.`,
+        plantId: plant.id,
+      });
+    }
+
+    const urgentMaterialRow = materialRowsForDisplay(plant.materials)
+      .filter((row) => row.diff !== null && row.diff < 0)
+      .sort(compareMaterialPriority)[0] ?? null;
+
+    if (urgentMaterialRow && ["cement", "flyash"].includes(urgentMaterialRow.key)) {
+      const recommendation = buildSourceRecommendation(plant, urgentMaterialRow.key, sourceRules);
+      if (recommendation.blocked) {
+        exceptions.push({
+          id: `source_blocked_${plant.id}_${urgentMaterialRow.key}`,
+          severity: "critical",
+          title: `Plant ${plant.id} has no valid ${MATERIAL_USAGE_LABELS[urgentMaterialRow.key].toLowerCase()} source`,
+          detail: recommendation.blockedReason,
+          plantId: plant.id,
+        });
+      }
+    }
+  });
+
+  return exceptions.sort((left, right) => {
+    const severityWeight = { critical: 0, attention: 1, info: 2 };
+    const leftWeight = severityWeight[left.severity] ?? 3;
+    const rightWeight = severityWeight[right.severity] ?? 3;
+    if (leftWeight !== rightWeight) return leftWeight - rightWeight;
+    if ((left.plantId ?? 9999) !== (right.plantId ?? 9999)) return (left.plantId ?? 9999) - (right.plantId ?? 9999);
+    return left.title.localeCompare(right.title);
+  });
 }
 
 function hasAnyMaterialData(materials) {
@@ -606,8 +1406,8 @@ function getPlantStartTime(plant) {
   return times[0]?.label ?? "-";
 }
 
-function buildAggDriverRows(aggBuffer) {
-  if (!aggBuffer) return DEMO_DRIVERS;
+function buildAggDriverRows(aggBuffer, { shift = "day", idPrefix = "agg", fallbackRows = [] } = {}) {
+  if (!aggBuffer) return fallbackRows;
 
   const workbook = XLSX.read(aggBuffer, { type: "array" });
   const rows = getSheetRows(workbook, "Trucks", 0);
@@ -621,12 +1421,12 @@ function buildAggDriverRows(aggBuffer) {
   ]);
 
   if (headerIndex < 0) {
-    return DEMO_DRIVERS;
+    return fallbackRows;
   }
 
   const records = rowsToObjects(rows, headerIndex)
     .map((row, index) => ({
-      id: `agg_${index + 1}`,
+      id: `${idPrefix}_${index + 1}`,
       name: cleanText(row.Name) || `driver_${cleanText(row.Driver) || index + 1}`,
       status: `${formatClockLabel(row.Start)} ${cleanText(row.Type) || "truck"}`.trim(),
       location:
@@ -636,6 +1436,7 @@ function buildAggDriverRows(aggBuffer) {
       sortStartMinutes: parseClockMinutes(row.Start),
       assignedTruck: cleanText(row["Assign Tr"]) || cleanText(row["Temp Tr"]),
       driverCode: cleanText(row.Driver),
+      shift,
     }))
     .filter((row) => row.name || row.location || row.assignedTruck)
     .sort((left, right) => left.sortStartMinutes - right.sortStartMinutes)
@@ -646,15 +1447,16 @@ function buildAggDriverRows(aggBuffer) {
       location: row.location,
       assignedTruck: row.assignedTruck,
       driverCode: row.driverCode,
+      shift: row.shift,
     }));
 
-  return records.length > 0 ? records : DEMO_DRIVERS;
+  return records.length > 0 ? records : fallbackRows;
 }
 
 function Metric({ label, value }) {
   return (
     <div className="border border-white/15 bg-white/[0.02] px-3 py-2">
-      <div className="text-[11px] text-white/55">{label}</div>
+      <div className="text-[11px] text-white/72">{label}</div>
       <div className="mt-1 text-[14px] font-medium text-white">{value}</div>
     </div>
   );
@@ -677,10 +1479,10 @@ function CliButton({ children, onClick, disabled = false, active = false, classN
   );
 }
 
-function CliSection({ title, children, right }) {
+function CliSection({ title, children, right, className = "", headerClassName = "" }) {
   return (
-    <section className="border border-white/15 bg-black p-4">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <section className={`border border-white/15 bg-black p-4 ${className}`}>
+      <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 ${headerClassName}`}>
         <div className="text-sm font-semibold text-white">{title}</div>
         {right}
       </div>
@@ -761,6 +1563,26 @@ function DecisionCard({ item, selected, onSelect }) {
       <div className="mt-2 text-[15px] font-semibold text-white">{item.actionLabel}</div>
       <div className="mt-2 text-sm text-white/80">{item.reason}</div>
       <div className="mt-1 text-[12px] text-white/55">{item.support}</div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-white">
+        <div className="border border-white/10 bg-white/[0.02] px-2 py-2">
+          <div className="text-white/45">Inbound</div>
+          <div className="mt-1 font-semibold">{item.liveDispatch.inboundLabel}</div>
+        </div>
+        <div className="border border-white/10 bg-white/[0.02] px-2 py-2">
+          <div className="text-white/45">Next ETA</div>
+          <div className="mt-1 font-semibold">{item.liveDispatch.nextEtaLabel}</div>
+        </div>
+        <div className="border border-white/10 bg-white/[0.02] px-2 py-2">
+          <div className="text-white/45">Coverage</div>
+          <div className="mt-1 font-semibold">{item.liveDispatch.coverageLabel}</div>
+        </div>
+      </div>
+      {item.liveDispatch.additionalTrucksNeeded > 0 ? (
+        <div className="mt-2 text-[11px] font-semibold text-amber-300">
+          Need {item.liveDispatch.additionalTrucksNeeded} more truck
+          {item.liveDispatch.additionalTrucksNeeded === 1 ? "" : "s"}
+        </div>
+      ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-3 text-[12px] text-white/60">
         <div>{formatRegionLabel(item.plant.region)}</div>
         <div>yardage {formatNumber(item.plant.yardage, 1)}</div>
@@ -819,6 +1641,9 @@ function DecisionsPage({
   selectedPlantId,
   setSelectedPlantId,
   selectedPlant,
+  drivers,
+  driverLogs,
+  sourceRules,
   onOpenDriverLogPage,
   onClosePlant,
 }) {
@@ -855,6 +1680,9 @@ function DecisionsPage({
         <div className="min-w-0">
           <PlantDetailsPanel
             plant={selectedPlant}
+            drivers={drivers}
+            driverLogs={driverLogs}
+            sourceRules={sourceRules}
             onClose={onClosePlant}
             onOpenDriverLogPage={onOpenDriverLogPage}
           />
@@ -871,21 +1699,13 @@ function PlantTile({ plant, selected, onClick }) {
   const riskFlags = formatRiskFlags(riskStatus);
   const startTime = getPlantStartTime(plant);
   const usageMaterials = materialRowsForDisplay(plant.materials);
-  const decision = buildPlantDecision(plant);
-  const areaLabel = formatRegionLabel(plant.region);
-  const hoverTitle = decision ? decision.actionLabel : `Plant ${plant.id} is stable`;
-  const hoverReason = decision
-    ? decision.reason
-    : "No immediate cement or fly-ash action is flagged.";
-  const hoverSupport = decision
-    ? decision.support
-    : `Start time ${startTime} | yardage ${formatNumber(plant.yardage, 1)}`;
+  const liveDispatch = getLiveDispatchSnapshot(plant);
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group relative w-[336px] shrink-0 overflow-visible border p-4 text-left transition ${
+      className={`w-[336px] shrink-0 overflow-hidden border p-4 text-left transition ${
         selected
           ? "border-white bg-white/[0.04]"
           : "border-white/15 bg-white/[0.02] hover:border-white/35"
@@ -896,7 +1716,7 @@ function PlantTile({ plant, selected, onClick }) {
           <div className="text-[11px] text-white/50">Plant {plant.id}</div>
           <div className="mt-1 text-[11px] text-white/60">Start time {startTime}</div>
           <div className="mt-2 border border-white/10 bg-white/[0.02] px-2 py-2">
-            <div className="text-[11px] text-white/50">Material usage</div>
+            <div className="text-[11px] text-white/50">Material usage [Live]</div>
             <div className="mt-1 space-y-1 text-[11px] text-white/70">
               {usageMaterials.length > 0 ? (
                 usageMaterials.map((row) => (
@@ -909,6 +1729,19 @@ function PlantTile({ plant, selected, onClick }) {
                 <div>-</div>
               )}
             </div>
+          </div>
+          <div className="mt-2 border border-white/10 bg-white/[0.02] px-2 py-2">
+            <div className="text-[11px] text-white/50">Inbound [Live]</div>
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/70">
+              <div>Trucks: {liveDispatch.inboundLabel}</div>
+              <div>Next ETA: {liveDispatch.nextEtaLabel}</div>
+              <div>Coverage: {liveDispatch.coverageLabel}</div>
+            </div>
+            {liveDispatch.additionalTrucksNeeded > 0 ? (
+              <div className="mt-1 text-[11px] font-semibold text-amber-300">
+                Need {liveDispatch.additionalTrucksNeeded} more trucks
+              </div>
+            ) : null}
           </div>
           {riskFlags.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-1">
@@ -962,16 +1795,6 @@ function PlantTile({ plant, selected, onClick }) {
           </div>
         )}
       </div>
-
-      <div className="pointer-events-none absolute left-3 right-3 top-full z-30 mt-2 hidden translate-y-1 border border-white/20 bg-black/95 p-3 opacity-0 shadow-2xl shadow-black/40 transition duration-150 group-hover:translate-y-0 group-hover:opacity-100 xl:block">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-[11px] uppercase tracking-[0.14em] text-white/50">quick view</div>
-          <div className="text-[11px] text-white/50">{areaLabel}</div>
-        </div>
-        <div className="mt-2 text-sm font-semibold text-white">{hoverTitle}</div>
-        <div className="mt-2 text-[12px] text-white/80">{hoverReason}</div>
-        <div className="mt-1 text-[12px] text-white/55">{hoverSupport}</div>
-      </div>
     </button>
   );
 }
@@ -986,6 +1809,8 @@ function PlantRibbon({
   setSearch,
   selectedRegion,
   setSelectedRegion,
+  plantSort,
+  setPlantSort,
 }) {
   const plantStripRef = useRef(null);
   const [plantStripMetrics, setPlantStripMetrics] = useState({
@@ -1033,6 +1858,8 @@ function PlantRibbon({
   return (
     <CliSection
       title="All plants"
+      className="pt-3 pb-3"
+      headerClassName="mb-3"
       right={
         <div className="flex flex-col gap-3 sm:items-end">
           <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
@@ -1080,11 +1907,25 @@ function PlantRibbon({
                 ))}
               </select>
             </label>
+            <label className="flex items-center gap-2 border border-white/15 px-3 py-2 text-sm text-white/85">
+              <span className="text-white/55">Sort</span>
+              <select
+                value={plantSort}
+                onChange={(event) => setPlantSort(event.target.value)}
+                className="bg-black text-sm text-white outline-none"
+              >
+                {PLANT_SORT_OPTIONS.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
       }
     >
-      <div ref={plantStripRef} className="overflow-x-auto overflow-y-visible py-2">
+      <div ref={plantStripRef} className="overflow-x-auto overflow-y-hidden py-1">
         <div className="flex min-w-max gap-3 pr-3">
           {filteredPlants.map((plant) => (
             <PlantTile
@@ -1102,7 +1943,19 @@ function PlantRibbon({
   );
 }
 
-function DriverLogList({ logs, emptyLabel, showPlant = true }) {
+function DriverLogList({
+  logs,
+  emptyLabel,
+  showPlant = true,
+  sourceRules = null,
+  editingLogId = null,
+  editingDraft = null,
+  driverOptions = null,
+  onEditLog = null,
+  onEditingDraftChange = null,
+  onSaveEdit = null,
+  onCancelEdit = null,
+}) {
   if (logs.length === 0) {
     return (
       <div className="border border-dashed border-white/25 p-4 text-sm text-white">
@@ -1113,24 +1966,66 @@ function DriverLogList({ logs, emptyLabel, showPlant = true }) {
 
   return (
     <div className="space-y-3">
-      {logs.map((entry) => (
-        <div key={entry.id} className="border border-white/25 p-3 text-sm text-white">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="font-semibold">
-              {showPlant ? `plant ${entry.plantId} :: ` : ""}
-              {entry.driver || "-"}
+      {logs.map((entry) => {
+        const isEditing = editingLogId === entry.id;
+
+        return (
+          <div key={entry.id} className="border border-white/25 p-3 text-sm text-white">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="font-semibold">
+                {showPlant ? `plant ${entry.plantId} :: ` : ""}
+                {entry.driver || "-"}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {onEditLog ? (
+                  isEditing ? (
+                    <>
+                      <CliButton onClick={onCancelEdit}>Cancel</CliButton>
+                      <CliButton
+                        onClick={onSaveEdit}
+                        disabled={!editingDraft || !hasDriverLogDraftContent(editingDraft)}
+                      >
+                        Save changes
+                      </CliButton>
+                    </>
+                  ) : (
+                    <CliButton onClick={() => onEditLog(entry)}>Edit</CliButton>
+                  )
+                ) : null}
+                <div className="text-[11px] opacity-70">
+                  {entry.updatedAt ? `updated ${entry.updatedAt}` : entry.savedAt}
+                </div>
+              </div>
             </div>
-            <div className="text-[11px] opacity-70">{entry.savedAt}</div>
+
+            {isEditing && editingDraft && driverOptions ? (
+              <div className="mt-3 border border-white/15 bg-white/[0.02] p-3">
+                <DriverLogForm
+                  draft={editingDraft}
+                  driverOptions={driverOptions}
+                  onDraftChange={onEditingDraftChange}
+                  onSave={onSaveEdit}
+                  saveDisabled={!hasDriverLogDraftContent(editingDraft)}
+                  saveLabel="save_changes"
+                />
+              </div>
+            ) : (
+              <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                <div className="break-words">location {entry.location || "-"}</div>
+                <div className="break-words">truck {entry.truckNumber || "-"}</div>
+                <div className="break-words">driver {entry.driver || "-"}</div>
+                <div className="break-words">source {entry.source || "-"}</div>
+                <div className="break-words">inv {entry.invCode || "-"}</div>
+              </div>
+            )}
+            {!isEditing && !isSourceAllowedForPlant(sourceRules, entry.plantId, entry.source) ? (
+              <div className="mt-3 text-[11px] font-medium text-amber-300">
+                Source {entry.source || "-"} is not allowed for plant {entry.plantId}.
+              </div>
+            ) : null}
           </div>
-          <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            <div className="break-words">location {entry.location || "-"}</div>
-            <div className="break-words">truck {entry.truckNumber || "-"}</div>
-            <div className="break-words">driver {entry.driver || "-"}</div>
-            <div className="break-words">source {entry.source || "-"}</div>
-            <div className="break-words">inv {entry.invCode || "-"}</div>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -1229,15 +2124,15 @@ function DriverLogForm({
         options={driverOptions.driverNames}
         onChange={(event) => onDraftChange("driver", event.target.value)}
       />
-      <DriverLogTextField
+      <DriverLogSelectField
         label="source"
         value={draft.source}
+        options={driverOptions.sources}
         onChange={(event) => onDraftChange("source", event.target.value)}
       />
-      <DriverLogTextField
+      <DriverLogSelectField
         label="inv code"
         value={draft.invCode}
-        listId={`driver-log-code-${draft.plantId ?? "none"}`}
         options={driverOptions.invCodes}
         onChange={(event) => onDraftChange("invCode", event.target.value)}
       />
@@ -1250,15 +2145,20 @@ function DriverLogForm({
   );
 }
 
-function PlantDetailsPanel({ plant, onOpenDriverLogPage, onClose }) {
+function PlantDetailsPanel({ plant, drivers, driverLogs, sourceRules, onOpenDriverLogPage, onClose }) {
   if (!plant) return null;
 
   const materialRows = materialRowsForDisplay(plant.materials);
   const negativeDiffCount = materialRows.filter((row) => row.diff !== null && row.diff < 0).length;
-  const decision = buildPlantDecision(plant);
+  const decision = buildPlantDecision(plant, sourceRules);
   const riskFlags = formatRiskFlags(getPlantRiskStatus(plant));
   const areaLabel = formatRegionLabel(plant.region);
   const startTime = getPlantStartTime(plant);
+  const liveDispatch = getLiveDispatchSnapshot(plant);
+  const inboundQueueRows = buildInboundQueueRows(plant, drivers, driverLogs, sourceRules);
+  const inboundCountLabel = `${inboundQueueRows.length} truck${inboundQueueRows.length === 1 ? "" : "s"}`;
+  const nextInboundEta = inboundQueueRows[0]?.eta ?? liveDispatch.nextEtaLabel;
+  const suggestedDriverGroup = getPlantDriverGroupLabel(plant);
 
   return (
     <div className="self-start xl:sticky xl:top-6 xl:z-10">
@@ -1270,7 +2170,7 @@ function PlantDetailsPanel({ plant, onOpenDriverLogPage, onClose }) {
             <div className="border border-white/15 px-3 py-2 text-white/80">
               Yardage {formatNumber(plant.yardage, 1)}
             </div>
-            <CliButton onClick={() => onOpenDriverLogPage(plant)}>Log page</CliButton>
+            <CliButton onClick={() => onOpenDriverLogPage(plant)}>View drivers</CliButton>
             <CliButton onClick={onClose}>Close</CliButton>
           </div>
         }
@@ -1286,6 +2186,30 @@ function PlantDetailsPanel({ plant, onOpenDriverLogPage, onClose }) {
                 <div className="mt-3 text-lg font-semibold text-white">{decision.actionLabel}</div>
                 <div className="mt-2 text-sm text-white/80">{decision.reason}</div>
                 <div className="mt-1 text-sm text-white/60">{decision.support}</div>
+                {decision.sourceRecommendation ? (
+                  <div className="mt-3 grid gap-3 border border-white/10 bg-white/[0.02] p-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <Metric
+                      label="Recommended source"
+                      value={decision.sourceRecommendation.bestSource?.code ?? "Blocked"}
+                    />
+                    <Metric
+                      label="Allocation left"
+                      value={
+                        decision.sourceRecommendation.bestSource
+                          ? formatNumber(decision.sourceRecommendation.bestSource.left, 0)
+                          : "-"
+                      }
+                    />
+                    <Metric
+                      label="Backup source"
+                      value={decision.sourceRecommendation.alternate?.code ?? "-"}
+                    />
+                    <Metric
+                      label="Valid sources"
+                      value={decision.sourceRecommendation.allowedSources.length}
+                    />
+                  </div>
+                ) : null}
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-[12px] text-white/55">
                   <div>Area {areaLabel}</div>
                   <div>By {decision.byTime}</div>
@@ -1307,12 +2231,45 @@ function PlantDetailsPanel({ plant, onOpenDriverLogPage, onClose }) {
             )}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <Metric label="Area" value={areaLabel} />
             <Metric label="Start time" value={startTime} />
             <Metric label="Yardage" value={formatNumber(plant.yardage, 1)} />
+            <Metric label="Next ETA" value={nextInboundEta} />
+            <Metric label="Inbound trucks" value={inboundCountLabel} />
             <Metric label="Materials shown" value={materialRows.length} />
             <Metric label="Negative diffs" value={negativeDiffCount} />
+          </div>
+
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[12px] font-medium text-white/75">Inbound queue</div>
+              <div className="text-[11px] text-white/50">Dispatch pool {suggestedDriverGroup}</div>
+            </div>
+            <div className="mt-3 overflow-auto border border-white/15">
+              <table className="min-w-full text-sm">
+                <thead className="border-b border-white/15 text-left text-[11px] uppercase tracking-[0.14em] text-white/50">
+                  <tr>
+                    <th className="px-3 py-3 font-medium">truck</th>
+                    <th className="px-3 py-3 font-medium">driver</th>
+                    <th className="px-3 py-3 font-medium">source</th>
+                    <th className="px-3 py-3 font-medium">eta</th>
+                    <th className="px-3 py-3 font-medium">material</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inboundQueueRows.map((row) => (
+                    <tr key={row.id} className="border-t border-white/10 text-white/80">
+                      <td className="px-3 py-3">{row.truck}</td>
+                      <td className="px-3 py-3">{row.driver}</td>
+                      <td className="px-3 py-3">{row.source}</td>
+                      <td className="px-3 py-3">{row.eta}</td>
+                      <td className="px-3 py-3">{row.material}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div>
@@ -1332,6 +2289,7 @@ function MainPageDriverLogPanel({
   driverLogs,
   driverLogDraft,
   driverOptions,
+  sourceRules,
   onDraftChange,
   onSaveDriverLog,
 }) {
@@ -1343,6 +2301,10 @@ function MainPageDriverLogPanel({
     driverLogDraft.plantId === plant.id
       ? { ...driverLogDraft, location }
       : createDriverLogDraft(plant.id, location);
+  const detailDriverOptions = {
+    ...driverOptions,
+    sources: getAllowedSourceOptionsForPlant(sourceRules, plant, detailDraft.source),
+  };
   const saveDisabled = !hasDriverLogDraftContent(detailDraft);
 
   return (
@@ -1359,7 +2321,7 @@ function MainPageDriverLogPanel({
             </div>
             <DriverLogForm
               draft={detailDraft}
-              driverOptions={driverOptions}
+              driverOptions={detailDriverOptions}
               onDraftChange={onDraftChange}
               onSave={onSaveDriverLog}
               saveDisabled={saveDisabled}
@@ -1375,6 +2337,7 @@ function MainPageDriverLogPanel({
             <DriverLogList
               logs={plantLogs}
               showPlant={false}
+              sourceRules={sourceRules}
               emptyLabel="No saved driver logs for this plant yet."
             />
           </div>
@@ -1521,126 +2484,546 @@ function MaterialUsageSection({ rows }) {
   );
 }
 
-function DriverStatusPanel({ isOpen, onToggle, drivers, variant = "sidebar" }) {
-  const listClass =
-    variant === "page"
-      ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3"
-      : "max-h-[calc(100vh-220px)] space-y-2 overflow-y-auto pr-1";
-  const summaryClass =
-    variant === "page"
-      ? "border border-white/15 bg-white/[0.02] p-3 text-sm text-white/75 md:col-span-2 xl:col-span-3"
-      : "border border-white/15 bg-white/[0.02] p-3 text-sm text-white/75";
+function buildSourceAllocationRows(rows) {
+  return rows.map((row) => {
+    const pickedUp = row.dayPicked + row.nightPicked;
+    return {
+      ...row,
+      pickedUp,
+      left: Math.max(0, row.allocation - pickedUp),
+    };
+  });
+}
+
+function SourceAllocationTable({ title, rows }) {
+  const computedRows = useMemo(() => buildSourceAllocationRows(rows), [rows]);
+  const totals = useMemo(
+    () =>
+      computedRows.reduce(
+        (sum, row) => ({
+          allocation: sum.allocation + row.allocation,
+          dayPicked: sum.dayPicked + row.dayPicked,
+          nightPicked: sum.nightPicked + row.nightPicked,
+          pickedUp: sum.pickedUp + row.pickedUp,
+          left: sum.left + row.left,
+        }),
+        { allocation: 0, dayPicked: 0, nightPicked: 0, pickedUp: 0, left: 0 },
+      ),
+    [computedRows],
+  );
+
+  return (
+    <CliSection
+      title={title}
+      right={<div className="text-sm text-white/60">{computedRows.length} sources</div>}
+    >
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <Metric label="Allocation" value={formatNumber(totals.allocation, 0)} />
+        <Metric label="Day picked" value={formatNumber(totals.dayPicked, 0)} />
+        <Metric label="Night picked" value={formatNumber(totals.nightPicked, 0)} />
+        <Metric label="Picked up" value={formatNumber(totals.pickedUp, 0)} />
+        <Metric label="Left" value={formatNumber(totals.left, 0)} />
+      </div>
+
+      <div className="overflow-auto border border-white/25">
+        <table className="min-w-full text-sm">
+          <thead className="border-b border-white/25 text-left text-[11px] uppercase tracking-[0.18em] text-white">
+            <tr>
+              <th className="px-3 py-3 font-medium">source</th>
+              <th className="px-3 py-3 font-medium text-right">allocation</th>
+              <th className="px-3 py-3 font-medium text-right">day</th>
+              <th className="px-3 py-3 font-medium text-right">night</th>
+              <th className="px-3 py-3 font-medium text-right">picked up</th>
+              <th className="px-3 py-3 font-medium text-right">left</th>
+            </tr>
+          </thead>
+          <tbody>
+            {computedRows.map((row) => (
+              <tr key={row.code} className="border-t border-white/15 text-white">
+                <td className="px-3 py-3 font-medium">{row.code}</td>
+                <td className="px-3 py-3 text-right">{formatNumber(row.allocation, 0)}</td>
+                <td className="px-3 py-3 text-right">{formatNumber(row.dayPicked, 0)}</td>
+                <td className="px-3 py-3 text-right">{formatNumber(row.nightPicked, 0)}</td>
+                <td className="px-3 py-3 text-right">{formatNumber(row.pickedUp, 0)}</td>
+                <td className="px-3 py-3 text-right font-semibold text-white">
+                  {formatNumber(row.left, 0)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </CliSection>
+  );
+}
+
+function SourceAllocationsPage() {
+  return (
+    <div className="grid gap-4">
+      <SourceAllocationTable title="Cement sources" rows={SOURCE_ALLOCATION_DATA.cement} />
+      <SourceAllocationTable title="Fly-ash sources" rows={SOURCE_ALLOCATION_DATA.flyash} />
+    </div>
+  );
+}
+
+function DriverStatusCard({ driver, selected, onSelect }) {
+  const truck = "assignedTruck" in driver ? driver.assignedTruck || "-" : "-";
+  const code = "driverCode" in driver ? driver.driverCode || "" : "";
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(driver)}
+      className={`w-full border p-3 text-left text-sm text-white transition ${
+        selected
+          ? "border-white/40 bg-white/[0.08]"
+          : "border-white/15 bg-white/[0.02] hover:border-white/30 hover:bg-white/[0.04]"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="font-semibold">{driver.name}</div>
+        <div className="text-[11px] text-white/55">truck {truck}</div>
+      </div>
+      <div className="mt-1 text-white/75">{driver.location}</div>
+      <div className="mt-1 text-[11px] text-white/50">
+        {driver.status}
+        {code ? ` - code ${code}` : ""}
+      </div>
+    </button>
+  );
+}
+
+function DriverGroupSection({ title, drivers, isOpen, onToggle, selectedDriverId, onSelectDriver }) {
+  return (
+    <div className="border border-white/15 bg-white/[0.02] p-3">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
+        <div>
+          <div className="text-sm font-semibold text-white">{title}</div>
+          <div className="mt-1 text-[11px] text-white/50">{drivers.length} drivers</div>
+        </div>
+        <div className="text-lg font-semibold text-white">{isOpen ? "-" : "+"}</div>
+      </button>
+
+      {isOpen ? (
+        <div className="mt-3 space-y-3">
+          {drivers.length > 0 ? (
+            drivers.map((driver) => (
+              <DriverStatusCard
+                key={driver.id}
+                driver={driver}
+                selected={selectedDriverId === driver.id}
+                onSelect={onSelectDriver}
+              />
+            ))
+          ) : (
+            <div className="border border-dashed border-white/20 p-3 text-sm text-white/55">
+              No drivers in this group.
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DriversBoard({
+  drivers,
+  plants,
+  logs,
+  selectedDriverId,
+  onSelectDriver,
+  driverSearch,
+  setDriverSearch,
+  focusPlant,
+  preferredGroupKey,
+}) {
+  const [openGroups, setOpenGroups] = useState({
+    day_rialto: false,
+    day_off_site: false,
+    day_nevada: false,
+    night_rialto: false,
+    night_off_site: false,
+    night_nevada: false,
+  });
+
+  const numericQuery = cleanText(driverSearch);
+  const numericExactQuery =
+    numericQuery && /^\d+$/.test(numericQuery) ? String(Number(numericQuery)) : null;
+  const searchedPlantId = parsePlantSearchId(driverSearch);
+
+  const driverPlantHistory = useMemo(() => {
+    const byDriver = new Map();
+
+    logs.forEach((entry) => {
+      const driverKey = cleanText(entry.driver).toLowerCase();
+      const plantId = Number(entry.plantId);
+      if (!driverKey || !Number.isInteger(plantId)) return;
+
+      if (!byDriver.has(driverKey)) byDriver.set(driverKey, new Set());
+      byDriver.get(driverKey).add(plantId);
+    });
+
+    return byDriver;
+  }, [logs]);
+
+  const searchedPlant = useMemo(() => {
+    if (searchedPlantId === null) return null;
+    return plants.find((plant) => plant.id === searchedPlantId) ?? null;
+  }, [plants, searchedPlantId]);
+
+  const filteredDrivers = useMemo(() => {
+    const query = cleanText(driverSearch).toLowerCase();
+    if (!query) return drivers;
+
+    return drivers.filter((driver) => {
+      const truck = "assignedTruck" in driver ? driver.assignedTruck || "" : "";
+      const code = "driverCode" in driver ? driver.driverCode || "" : "";
+      const driverKey = cleanText(driver.name).toLowerCase();
+      const hasPlantHistory = searchedPlantId !== null && driverPlantHistory.get(driverKey)?.has(searchedPlantId);
+      const hasLivePlantMatch = locationMatchesPlantId(driver.location, searchedPlantId);
+
+      if (numericExactQuery) {
+        const exactNumericMatch = [truck, code].some((value) => {
+          const digits = cleanText(value).replace(/\D+/g, "");
+          return digits ? String(Number(digits)) === numericExactQuery : false;
+        });
+
+        return exactNumericMatch || hasPlantHistory || hasLivePlantMatch;
+      }
+
+      const textMatch = [driver.name, driver.location, driver.status, truck, code].some((value) =>
+        cleanText(value).toLowerCase().includes(query),
+      );
+
+      return textMatch || hasPlantHistory || hasLivePlantMatch;
+    });
+  }, [driverPlantHistory, driverSearch, drivers, numericExactQuery, searchedPlantId]);
+
+  const groupedDrivers = useMemo(() => {
+    const groups = {
+      day: {
+        rialto: [],
+        off_site: [],
+        nevada: [],
+      },
+      night: {
+        rialto: [],
+        off_site: [],
+        nevada: [],
+      },
+    };
+
+    filteredDrivers.forEach((driver) => {
+      const shiftKey = getDriverShiftKey(driver);
+      const groupKey = getDriverGroupKey(driver);
+      groups[shiftKey][groupKey].push(driver);
+    });
+
+    return groups;
+  }, [filteredDrivers]);
+
+  useEffect(() => {
+    if (!cleanText(driverSearch)) return;
+
+    setOpenGroups((current) => {
+      let changed = false;
+      const next = { ...current };
+
+      DRIVER_SHIFT_ORDER.forEach((shiftKey) => {
+        DRIVER_GROUP_ORDER.forEach((groupKey) => {
+          const stateKey = `${shiftKey}_${groupKey}`;
+          const shouldOpen = groupedDrivers[shiftKey][groupKey].length > 0;
+          if (next[stateKey] !== shouldOpen) {
+            next[stateKey] = shouldOpen;
+            changed = true;
+          }
+        });
+      });
+
+      return changed ? next : current;
+    });
+  }, [driverSearch, groupedDrivers]);
+
+  useEffect(() => {
+    if (!preferredGroupKey) return;
+    const stateKey = `day_${preferredGroupKey}`;
+    setOpenGroups((current) => ({
+      ...current,
+      [stateKey]: true,
+    }));
+  }, [preferredGroupKey]);
+
+  function toggleGroup(shiftKey, groupKey) {
+    const stateKey = `${shiftKey}_${groupKey}`;
+    setOpenGroups((current) => ({
+      ...current,
+      [stateKey]: !current[stateKey],
+    }));
+  }
 
   return (
     <CliSection
       title="Drivers"
-      right={<CliButton onClick={onToggle}>{isOpen ? "Hide" : "Show"}</CliButton>}
-    >
-      {isOpen ? (
-        <div className={listClass}>
-          <div className={summaryClass}>
-            {drivers.length} driver rows loaded
-          </div>
-          {drivers.map((driver) => {
-            const truck = "assignedTruck" in driver ? driver.assignedTruck || "-" : "-";
-            const code = "driverCode" in driver ? driver.driverCode || "" : "";
-
-            return (
-              <div key={driver.id} className="border border-white/15 bg-white/[0.02] p-3 text-sm text-white">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="font-semibold">{driver.name}</div>
-                  <div className="text-[11px] text-white/55">truck {truck}</div>
-                </div>
-                <div className="mt-1 text-white/75">{driver.location}</div>
-                <div className="mt-1 text-[11px] text-white/50">
-                  {driver.status}
-                  {code ? ` - code ${code}` : ""}
-                </div>
-              </div>
-            );
-          })}
+      right={
+        <div className="flex flex-wrap items-center gap-3">
+          {focusPlant ? (
+            <div className="text-[11px] text-white/50">
+              Plant {focusPlant.id} {"->"} {getPlantDriverGroupLabel(focusPlant)}
+            </div>
+          ) : null}
+          {searchedPlant && !focusPlant ? (
+            <div className="text-[11px] text-white/50">
+              Plant {searchedPlant.id} {"->"} {getPlantDriverGroupLabel(searchedPlant)}
+            </div>
+          ) : null}
+          <label className="flex min-w-[240px] items-center gap-2 border border-white/15 px-3 py-2 text-sm text-white/85">
+            <span className="text-white/55">Search drivers</span>
+            <input
+              type="text"
+              value={driverSearch}
+              onChange={(event) => setDriverSearch(event.target.value)}
+              placeholder="driver, truck, location, plant"
+              className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+            />
+          </label>
         </div>
-      ) : null}
+      }
+    >
+      <div className="grid gap-5">
+        {DRIVER_SHIFT_ORDER.map((shiftKey) => {
+          const shiftDrivers = groupedDrivers[shiftKey];
+          const shiftCount = DRIVER_GROUP_ORDER.reduce(
+            (sum, groupKey) => sum + shiftDrivers[groupKey].length,
+            0,
+          );
+
+          return (
+            <div key={shiftKey} className="border border-white/15 bg-white/[0.02] p-4">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-white">{DRIVER_SHIFT_LABELS[shiftKey]}</div>
+                <div className="text-[11px] text-white/50">{shiftCount} drivers</div>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-3">
+                {DRIVER_GROUP_ORDER.map((groupKey) => {
+                  const stateKey = `${shiftKey}_${groupKey}`;
+                  return (
+                    <DriverGroupSection
+                      key={stateKey}
+                      title={DRIVER_GROUP_LABELS[groupKey]}
+                      drivers={shiftDrivers[groupKey]}
+                      isOpen={openGroups[stateKey]}
+                      onToggle={() => toggleGroup(shiftKey, groupKey)}
+                      selectedDriverId={selectedDriverId}
+                      onSelectDriver={onSelectDriver}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </CliSection>
   );
 }
 
 function DriverLogPage({
+  plants,
   plant,
   draft,
-  driverOptions,
-  onDraftChange,
-  onSave,
   logs,
   onOpenPlant,
+  selectedDriver,
+  driverOptions,
+  sourceRules,
+  onUpdateLog,
+  editRequest = null,
 }) {
-  const plantLogs = useMemo(
-    () =>
-      draft.plantId === null
-        ? logs
-        : logs.filter((entry) => Number(entry.plantId) === Number(draft.plantId)),
-    [logs, draft.plantId],
-  );
+  const [editingLogId, setEditingLogId] = useState(null);
+  const [editingDraft, setEditingDraft] = useState(() => createDriverLogDraft(null));
+
+  const driverLogs = useMemo(() => {
+    if (selectedDriver) {
+      const selectedName = cleanText(selectedDriver.name).toLowerCase();
+      return logs.filter((entry) => cleanText(entry.driver).toLowerCase() === selectedName);
+    }
+
+    if (draft.plantId !== null) {
+      return logs.filter((entry) => Number(entry.plantId) === Number(draft.plantId));
+    }
+
+    return [];
+  }, [logs, draft.plantId, selectedDriver]);
+
+  useEffect(() => {
+    setEditingLogId(null);
+    setEditingDraft(createDriverLogDraft(null));
+  }, [selectedDriver?.id, draft.plantId]);
+
+  useEffect(() => {
+    if (editingLogId === null) return;
+
+    const currentEntry = logs.find((entry) => entry.id === editingLogId);
+    if (!currentEntry) {
+      setEditingLogId(null);
+      setEditingDraft(createDriverLogDraft(null));
+    }
+  }, [logs, editingLogId]);
+
+  useEffect(() => {
+    if (!editRequest?.logId) return;
+
+    const currentEntry = logs.find((entry) => entry.id === editRequest.logId);
+    if (!currentEntry) return;
+
+    setEditingLogId(currentEntry.id);
+    setEditingDraft(createDriverLogDraftFromEntry(currentEntry));
+  }, [editRequest, logs]);
+
+  function beginEditLog(entry) {
+    setEditingLogId(entry.id);
+    setEditingDraft(createDriverLogDraftFromEntry(entry));
+  }
+
+  function updateEditingDraft(field, value) {
+    setEditingDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function cancelEditLog() {
+    setEditingLogId(null);
+    setEditingDraft(createDriverLogDraft(null));
+  }
+
+  function saveEditedLog() {
+    if (editingLogId === null || !hasDriverLogDraftContent(editingDraft)) return;
+    onUpdateLog(editingLogId, editingDraft);
+    setEditingLogId(null);
+    setEditingDraft(createDriverLogDraft(null));
+  }
+
+  const editingPlant =
+    plants.find((item) => item.id === editingDraft.plantId) ??
+    plant ??
+    null;
+  const editingDriverOptions = {
+    ...driverOptions,
+    sources: getAllowedSourceOptionsForPlant(sourceRules, editingPlant, editingDraft.source),
+  };
+
+  const title = selectedDriver
+    ? `Driver log :: ${selectedDriver.name}`
+    : draft.plantId === null
+      ? "Driver log"
+      : `Driver log :: Plant ${draft.plantId}`;
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
-      <CliSection title="Driver log editor">
-        <DriverLogForm
-          draft={draft}
-          driverOptions={driverOptions}
-          onDraftChange={onDraftChange}
-          onSave={onSave}
-          saveDisabled={!hasDriverLogDraftContent(draft)}
-        />
-      </CliSection>
-
-      <CliSection
-        title={`Saved logs${draft.plantId === null ? "" : ` for plant ${draft.plantId}`}`}
-        right={
-          plant ? (
-            <CliButton onClick={() => onOpenPlant(plant.id)}>Open plant {plant.id}</CliButton>
-          ) : null
+    <CliSection
+      title={title}
+      right={
+        !selectedDriver && plant ? (
+          <CliButton onClick={() => onOpenPlant(plant.id)}>Open plant {plant.id}</CliButton>
+        ) : null
+      }
+    >
+      <DriverLogList
+        logs={driverLogs}
+        emptyLabel={
+          selectedDriver
+            ? "No saved logs for this driver yet."
+            : draft.plantId === null
+              ? "Select a driver on the left."
+              : "No saved logs for this plant yet."
         }
-      >
-        <DriverLogList
-          logs={plantLogs}
-          emptyLabel={
-            draft.plantId === null ? "No saved logs yet." : "No saved logs for this plant yet."
-          }
-        />
-      </CliSection>
-    </div>
+        sourceRules={sourceRules}
+        editingLogId={editingLogId}
+        editingDraft={editingDraft}
+        driverOptions={editingDriverOptions}
+        onEditLog={beginEditLog}
+        onEditingDraftChange={updateEditingDraft}
+        onSaveEdit={saveEditedLog}
+        onCancelEdit={cancelEditLog}
+      />
+    </CliSection>
   );
 }
 
 function DriversPage({
   drivers,
-  showDriverStatus,
-  onToggleDriverStatus,
+  plants,
   plant,
   draft,
-  driverOptions,
-  onDraftChange,
-  onSave,
   logs,
+  driverOptions,
+  sourceRules,
   onOpenPlant,
+  onUpdateLog,
+  editRequest = null,
 }) {
+  const [selectedDriverId, setSelectedDriverId] = useState(null);
+  const [driverSearch, setDriverSearch] = useState("");
+
+  const selectedDriver = useMemo(
+    () => drivers.find((driver) => driver.id === selectedDriverId) ?? null,
+    [drivers, selectedDriverId],
+  );
+
+  const searchedPlant = useMemo(() => {
+    const searchedPlantId = parsePlantSearchId(driverSearch);
+    if (searchedPlantId === null) return null;
+    return plants.find((item) => item.id === searchedPlantId) ?? null;
+  }, [driverSearch, plants]);
+
+  const focusPlant = plant ?? searchedPlant;
+  const preferredGroupKey = focusPlant ? getPlantDriverGroupKey(focusPlant) : null;
+  const logDraft = !selectedDriver && !plant && searchedPlant
+    ? { ...draft, plantId: searchedPlant.id, location: driverLogLocationForPlant(searchedPlant) }
+    : draft;
+
+  useEffect(() => {
+    setSelectedDriverId(null);
+  }, [plant?.id]);
+
+  useEffect(() => {
+    if (!cleanText(driverSearch)) return;
+    setSelectedDriverId(null);
+  }, [driverSearch]);
+
+  useEffect(() => {
+    if (!editRequest?.logId) return;
+    setSelectedDriverId(null);
+  }, [editRequest]);
+
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-      <DriverStatusPanel
-        isOpen={showDriverStatus}
-        onToggle={onToggleDriverStatus}
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+      <DriversBoard
         drivers={drivers}
-        variant="page"
+        plants={plants}
+        logs={logs}
+        selectedDriverId={selectedDriverId}
+        onSelectDriver={(driver) => setSelectedDriverId(driver.id)}
+        driverSearch={driverSearch}
+        setDriverSearch={setDriverSearch}
+        focusPlant={focusPlant}
+        preferredGroupKey={preferredGroupKey}
       />
       <DriverLogPage
-        plant={plant}
-        draft={draft}
-        driverOptions={driverOptions}
-        onDraftChange={onDraftChange}
-        onSave={onSave}
+        plants={plants}
+        plant={focusPlant}
+        draft={logDraft}
         logs={logs}
         onOpenPlant={onOpenPlant}
+        selectedDriver={selectedDriver}
+        driverOptions={driverOptions}
+        sourceRules={sourceRules}
+        onUpdateLog={onUpdateLog}
+        editRequest={editRequest}
       />
     </div>
   );
@@ -1672,20 +3055,350 @@ function NotesPage() {
   );
 }
 
+function ExceptionsList({
+  items,
+  emptyLabel = "No open exceptions.",
+  onOpenPlant = null,
+  onEditLog = null,
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="border border-dashed border-white/25 p-4 text-sm text-white">
+        {emptyLabel}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.map((item) => (
+        <div
+          key={item.id}
+          className={`border p-4 text-sm ${
+            item.severity === "critical"
+              ? "border-rose-500/35 bg-rose-500/10 text-rose-100"
+              : "border-amber-400/35 bg-amber-400/10 text-white"
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-semibold">{item.title}</div>
+            <div className="flex flex-wrap items-center gap-2">
+              {onEditLog && item.logId ? (
+                <CliButton onClick={() => onEditLog(item.logId)}>
+                  {item.relatedLogIds?.length > 1 ? "Review logs" : "Edit log"}
+                </CliButton>
+              ) : null}
+              {onOpenPlant && Number.isInteger(item.plantId) ? (
+                <CliButton onClick={() => onOpenPlant(item.plantId)}>Open plant</CliButton>
+              ) : null}
+              <div className="text-[11px] uppercase tracking-[0.16em] opacity-75">{item.severity}</div>
+            </div>
+          </div>
+          <div className="mt-2 leading-6 opacity-90">{item.detail}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ExceptionsPage({ exceptions, onOpenPlant, onEditLog }) {
+  const criticalCount = exceptions.filter((item) => item.severity === "critical").length;
+  const attentionCount = exceptions.filter((item) => item.severity === "attention").length;
+
+  return (
+    <div className="grid gap-4">
+      <CliSection title="Exceptions" right={<div className="text-sm text-white/60">{exceptions.length} open</div>}>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Metric label="Open exceptions" value={exceptions.length} />
+          <Metric label="Critical" value={criticalCount} />
+          <Metric label="Attention" value={attentionCount} />
+        </div>
+      </CliSection>
+
+      <CliSection title="Dispatch Exceptions">
+        <ExceptionsList items={exceptions} onOpenPlant={onOpenPlant} onEditLog={onEditLog} />
+      </CliSection>
+    </div>
+  );
+}
+
+function EndOfShiftSummaryPage({ data, drivers, driverLogs, exceptions, onOpenPlant, onEditLog }) {
+  const [shiftNotes, setShiftNotes] = useState(() => loadEndOfShiftNotes());
+
+  const shiftCounts = useMemo(
+    () => ({
+      day: drivers.filter((driver) => getDriverShiftKey(driver) === "day").length,
+      night: drivers.filter((driver) => getDriverShiftKey(driver) === "night").length,
+    }),
+    [drivers],
+  );
+
+  const uniqueLoggedDrivers = useMemo(
+    () => new Set(driverLogs.map((entry) => cleanText(entry.driver)).filter(Boolean)).size,
+    [driverLogs],
+  );
+
+  const uniqueLoggedTrucks = useMemo(
+    () => new Set(driverLogs.map((entry) => cleanText(entry.truckNumber)).filter(Boolean)).size,
+    [driverLogs],
+  );
+
+  const plantsServedCount = useMemo(
+    () => new Set(driverLogs.map((entry) => Number(entry.plantId)).filter(Number.isInteger)).size,
+    [driverLogs],
+  );
+
+  const topPlantActivity = useMemo(() => {
+    const counts = new Map();
+    driverLogs.forEach((entry) => {
+      const plantId = Number(entry.plantId);
+      if (!Number.isInteger(plantId)) return;
+      counts.set(plantId, (counts.get(plantId) ?? 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .map(([plantId, count]) => ({
+        plantId,
+        count,
+        plant: data.plants.find((item) => item.id === plantId) ?? null,
+      }))
+      .sort((left, right) => right.count - left.count || left.plantId - right.plantId)
+      .slice(0, 6);
+  }, [data.plants, driverLogs]);
+
+  const currentRiskPlants = useMemo(
+    () =>
+      data.plants
+        .filter((plant) => getPlantRiskStatus(plant).hasRisk)
+        .map((plant) => ({
+          id: plant.id,
+          flags: formatRiskFlags(getPlantRiskStatus(plant)).join(" / ") || "risk",
+        }))
+        .slice(0, 8),
+    [data.plants],
+  );
+
+  const topLoggedSources = useMemo(() => {
+    const counts = new Map();
+    driverLogs.forEach((entry) => {
+      const source = normalizeSourceCode(entry.source);
+      if (!source) return;
+      counts.set(source, (counts.get(source) ?? 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .map(([source, count]) => ({ source, count }))
+      .sort((left, right) => right.count - left.count || left.source.localeCompare(right.source))
+      .slice(0, 6);
+  }, [driverLogs]);
+
+  const cementAllocationTotals = useMemo(
+    () =>
+      SOURCE_ALLOCATION_DATA.cement.reduce(
+        (sum, row) => ({
+          allocation: sum.allocation + row.allocation,
+          dayPicked: sum.dayPicked + row.dayPicked,
+          nightPicked: sum.nightPicked + row.nightPicked,
+          pickedUp: sum.pickedUp + row.dayPicked + row.nightPicked,
+          left: sum.left + (row.allocation - row.dayPicked - row.nightPicked),
+        }),
+        { allocation: 0, dayPicked: 0, nightPicked: 0, pickedUp: 0, left: 0 },
+      ),
+    [],
+  );
+
+  const flyashAllocationTotals = useMemo(
+    () =>
+      SOURCE_ALLOCATION_DATA.flyash.reduce(
+        (sum, row) => ({
+          allocation: sum.allocation + row.allocation,
+          dayPicked: sum.dayPicked + row.dayPicked,
+          nightPicked: sum.nightPicked + row.nightPicked,
+          pickedUp: sum.pickedUp + row.dayPicked + row.nightPicked,
+          left: sum.left + (row.allocation - row.dayPicked - row.nightPicked),
+        }),
+        { allocation: 0, dayPicked: 0, nightPicked: 0, pickedUp: 0, left: 0 },
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    window.localStorage.setItem(END_OF_SHIFT_NOTES_STORAGE_KEY, shiftNotes);
+  }, [shiftNotes]);
+
+  return (
+    <div className="grid gap-4">
+      <CliSection
+        title="End of Shift Summary"
+        right={
+          <div className="text-sm text-white/60">
+            updated {new Date(data.meta?.generatedAt ?? Date.now()).toLocaleString()}
+          </div>
+        }
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <Metric label="Active plants" value={data.summary.activePlants} />
+          <Metric label="Total yardage" value={formatNumber(data.summary.totalYardage, 1)} />
+          <Metric label="Delivered" value={formatNumber(DELIVERED_YARDAGE, 0)} />
+          <Metric label="Saved dispatch logs" value={driverLogs.length} />
+          <Metric label="Plants served" value={plantsServedCount} />
+          <Metric label="Open risk plants" value={currentRiskPlants.length} />
+          <Metric label="Open exceptions" value={exceptions.length} />
+        </div>
+      </CliSection>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <CliSection title="Dispatch Activity">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric label="Day shift drivers" value={shiftCounts.day} />
+            <Metric label="Night shift drivers" value={shiftCounts.night} />
+            <Metric label="Drivers" value={uniqueLoggedDrivers} />
+            <Metric label="Trucks" value={uniqueLoggedTrucks} />
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="border border-white/15 bg-white/[0.02] p-4">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-white/50">
+                Material usage [live]
+              </div>
+              <div className="mt-3 space-y-2 text-sm text-white/80">
+                <div>
+                  Cement <span className="font-semibold text-white">{LIVE_HEADER_USAGE.cement.used} / {LIVE_HEADER_USAGE.cement.total}</span>
+                </div>
+                <div>
+                  Fly-ash <span className="font-semibold text-white">{LIVE_HEADER_USAGE.flyash.used} / {LIVE_HEADER_USAGE.flyash.total}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-white/15 bg-white/[0.02] p-4">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-white/50">
+                Top logged sources
+              </div>
+              <div className="mt-3 space-y-2 text-sm text-white/80">
+                {topLoggedSources.length > 0 ? (
+                  topLoggedSources.map((item) => (
+                    <div key={item.source} className="flex items-center justify-between gap-3">
+                      <span>{item.source}</span>
+                      <span className="font-semibold text-white">{item.count}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-white/55">No source activity logged yet.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </CliSection>
+
+        <CliSection title="Material Pickup Summary">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="border border-white/15 bg-white/[0.02] p-4">
+              <div className="text-sm font-semibold text-white">Cement</div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Metric label="Allocation" value={formatNumber(cementAllocationTotals.allocation, 0)} />
+                <Metric label="Picked up" value={formatNumber(cementAllocationTotals.pickedUp, 0)} />
+                <Metric label="Day loads" value={formatNumber(cementAllocationTotals.dayPicked, 0)} />
+                <Metric label="Night loads" value={formatNumber(cementAllocationTotals.nightPicked, 0)} />
+              </div>
+            </div>
+
+            <div className="border border-white/15 bg-white/[0.02] p-4">
+              <div className="text-sm font-semibold text-white">Fly-ash</div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Metric label="Allocation" value={formatNumber(flyashAllocationTotals.allocation, 0)} />
+                <Metric label="Picked up" value={formatNumber(flyashAllocationTotals.pickedUp, 0)} />
+                <Metric label="Day loads" value={formatNumber(flyashAllocationTotals.dayPicked, 0)} />
+                <Metric label="Night loads" value={formatNumber(flyashAllocationTotals.nightPicked, 0)} />
+              </div>
+            </div>
+          </div>
+        </CliSection>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <CliSection title="Top Plant Activity" right={<div className="text-sm text-white/60">{topPlantActivity.length} plants</div>}>
+          {topPlantActivity.length > 0 ? (
+            <div className="space-y-3">
+              {topPlantActivity.map((item) => (
+                <div key={item.plantId} className="flex items-center justify-between gap-3 border border-white/15 bg-white/[0.02] p-3 text-sm text-white">
+                  <div>
+                    <div className="font-semibold">Plant {item.plantId}</div>
+                    <div className="mt-1 text-white/55">
+                      {item.plant ? `${formatRegionLabel(item.plant.region)} • yardage ${formatNumber(item.plant.yardage, 1)}` : "No plant summary available"}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[11px] text-white/50">logged loads</div>
+                    <div className="text-lg font-semibold text-white">{item.count}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="border border-dashed border-white/25 p-4 text-sm text-white">
+              No plant activity logged yet.
+            </div>
+          )}
+        </CliSection>
+
+        <CliSection title="Current Plant Highlights" right={<div className="text-sm text-white/60">{currentRiskPlants.length} at risk</div>}>
+          <div className="grid gap-3">
+            <div className="border border-white/15 bg-white/[0.02] p-4">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-white/50">Open risk plants</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {currentRiskPlants.length > 0 ? (
+                  currentRiskPlants.map((item) => (
+                    <div key={item.id} className="border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                      Plant {item.id} <span className="text-rose-300">({item.flags})</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-white/55">No current plant shortages flagged.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="border border-white/15 bg-white/[0.02] p-4">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-white/50">NOTES:</div>
+              <textarea
+                value={shiftNotes}
+                onChange={(event) => setShiftNotes(event.target.value)}
+                className="mt-3 min-h-[150px] w-full resize-y border border-white/15 bg-black px-3 py-3 text-sm leading-6 text-white outline-none"
+              />
+            </div>
+          </div>
+        </CliSection>
+      </div>
+
+      <CliSection title="Exceptions Snapshot" right={<div className="text-sm text-white/60">top {Math.min(5, exceptions.length)}</div>}>
+        <ExceptionsList
+          items={exceptions.slice(0, 5)}
+          emptyLabel="No open exceptions to hand off."
+          onOpenPlant={onOpenPlant}
+          onEditLog={onEditLog}
+        />
+      </CliSection>
+    </div>
+  );
+}
+
 export default function DispatchCockpitLive() {
   const [data, setData] = useState(DEMO_DATA);
   const [drivers, setDrivers] = useState(DEMO_DRIVERS);
+  const [sourceRules, setSourceRules] = useState(() => createEmptySourceRules());
   const [page, setPage] = useState("cockpit");
   const [activeOnly, setActiveOnly] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedRegion, setSelectedRegion] = useState("all");
+  const [plantSort, setPlantSort] = useState("plant_id");
   const [selectedPlantId, setSelectedPlantId] = useState(null);
   const [showActNow, setShowActNow] = useState(true);
   const [showWatchNext, setShowWatchNext] = useState(true);
   const [showPlantTotals, setShowPlantTotals] = useState(true);
-  const [showDriverStatus, setShowDriverStatus] = useState(true);
   const [driverLogs, setDriverLogs] = useState(loadDriverLogs);
   const [driverLogDraft, setDriverLogDraft] = useState(() => createDriverLogDraft(null));
+  const [driverLogEditRequest, setDriverLogEditRequest] = useState(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
   const sourceBridge = useMemo(
@@ -1704,40 +3417,38 @@ export default function DispatchCockpitLive() {
     });
   }, [data, activeOnly, search, selectedRegion]);
 
+  const sortedPlants = useMemo(
+    () => [...filteredPlants].sort((left, right) => comparePlantsForSort(left, right, plantSort, sourceRules)),
+    [filteredPlants, plantSort, sourceRules],
+  );
+
   const selectedPlant = useMemo(() => {
     if (selectedPlantId === null) return null;
     return data.plants.find((plant) => plant.id === selectedPlantId) ?? null;
   }, [data, selectedPlantId]);
 
-  const riskPlants = useMemo(
-    () =>
-      data.plants
-        .map((plant) => ({
-          id: plant.id,
-          ...getPlantRiskStatus(plant),
-        }))
-        .filter((plant) => plant.hasRisk),
-    [data],
-  );
-  const riskPlantCount = riskPlants.length;
-
   const actNowDecisions = useMemo(
     () =>
       filteredPlants
-        .map((plant) => buildPlantDecision(plant))
+        .map((plant) => buildPlantDecision(plant, sourceRules))
         .filter((decision) => decision?.mode === "act_now")
         .sort((left, right) => right.score - left.score),
-    [filteredPlants],
+    [filteredPlants, sourceRules],
   );
   const hasActNow = actNowDecisions.length > 0;
 
   const watchDecisions = useMemo(
     () =>
       filteredPlants
-        .map((plant) => buildPlantDecision(plant))
+        .map((plant) => buildPlantDecision(plant, sourceRules))
         .filter((decision) => decision?.mode === "watch")
         .sort((left, right) => right.score - left.score),
-    [filteredPlants],
+    [filteredPlants, sourceRules],
+  );
+
+  const dispatchExceptions = useMemo(
+    () => buildDispatchExceptions(data.plants, driverLogs, sourceRules),
+    [data.plants, driverLogs, sourceRules],
   );
 
   const driverOptions = useMemo(
@@ -1747,9 +3458,8 @@ export default function DispatchCockpitLive() {
         drivers.map((driver) => ("assignedTruck" in driver ? driver.assignedTruck : "")),
       ),
       driverNames: uniqueCleanValues(drivers.map((driver) => driver.name)),
-      invCodes: uniqueCleanValues(
-        drivers.map((driver) => ("driverCode" in driver ? driver.driverCode : "")),
-      ),
+      sources: DRIVER_LOG_SOURCE_OPTIONS,
+      invCodes: DRIVER_LOG_INV_CODE_OPTIONS,
     }),
     [drivers],
   );
@@ -1763,11 +3473,20 @@ export default function DispatchCockpitLive() {
       setRunning(true);
       setError("");
 
-      const [yardageSource, adjustmentsSource, materialSource, aggSource] = await Promise.all([
+      const [
+        yardageSource,
+        adjustmentsSource,
+        materialSource,
+        aggSource,
+        nightAggSource,
+        sourceToPlantSource,
+      ] = await Promise.all([
         readSource(sourceBridge, "yardage", false),
         readSource(sourceBridge, "adjustments", false),
         readSource(sourceBridge, "material", true),
         readSource(sourceBridge, "aggAssignments", false),
+        readSource(sourceBridge, "nightAssignments", false),
+        readSource(sourceBridge, "sourceToPlant", false),
       ]);
 
       const nextData = buildCockpitData({
@@ -1779,8 +3498,21 @@ export default function DispatchCockpitLive() {
         materialName: materialSource.fileName,
       });
 
+      const dayDrivers = buildAggDriverRows(aggSource.buffer, {
+        shift: "day",
+        idPrefix: "agg_day",
+        fallbackRows: DEMO_DRIVERS,
+      });
+      const nightDrivers = buildAggDriverRows(nightAggSource.buffer, {
+        shift: "night",
+        idPrefix: "agg_night",
+        fallbackRows: [],
+      });
+      const nextSourceRules = parseSourceToPlantWorkbook(sourceToPlantSource.buffer);
+
       setData(nextData);
-      setDrivers(buildAggDriverRows(aggSource.buffer));
+      setDrivers([...dayDrivers, ...nightDrivers]);
+      setSourceRules(nextSourceRules);
       setSelectedPlantId(null);
     } catch (runError) {
       setError(
@@ -1809,6 +3541,7 @@ export default function DispatchCockpitLive() {
   }, [page, selectedPlantId, data]);
 
   function openDriverLogForPlant(plant) {
+    setDriverLogEditRequest(null);
     const nextLocation = driverLogLocationForPlant(plant);
     setDriverLogDraft((current) =>
       current.plantId === plant.id
@@ -1825,6 +3558,11 @@ export default function DispatchCockpitLive() {
     }));
   }
 
+  function getPlantMaterialKeyForLog(plantId) {
+    const plant = data.plants.find((item) => item.id === plantId) ?? null;
+    return plant ? getPrimaryPlantMaterialKey(plant) : "cement";
+  }
+
   function saveDriverLog() {
     if (driverLogDraft.plantId === null || !hasDriverLogDraftContent(driverLogDraft)) return;
 
@@ -1834,7 +3572,7 @@ export default function DispatchCockpitLive() {
       location: cleanText(driverLogDraft.location),
       truckNumber: cleanText(driverLogDraft.truckNumber),
       driver: cleanText(driverLogDraft.driver),
-      source: cleanText(driverLogDraft.source),
+      source: normalizeSourceCode(driverLogDraft.source, getPlantMaterialKeyForLog(driverLogDraft.plantId)),
       invCode: cleanText(driverLogDraft.invCode),
       savedAt: new Date().toLocaleString(),
     };
@@ -1843,9 +3581,45 @@ export default function DispatchCockpitLive() {
     setDriverLogDraft(createDriverLogDraft(driverLogDraft.plantId, driverLogDraft.location));
   }
 
+  function updateSavedDriverLog(entryId, nextDraft) {
+    setDriverLogs((current) =>
+      current.map((entry) =>
+        entry.id !== entryId
+          ? entry
+          : {
+              ...entry,
+              plantId: nextDraft.plantId,
+              location: cleanText(nextDraft.location),
+              truckNumber: cleanText(nextDraft.truckNumber),
+              driver: cleanText(nextDraft.driver),
+              source: normalizeSourceCode(nextDraft.source, getPlantMaterialKeyForLog(nextDraft.plantId)),
+              invCode: cleanText(nextDraft.invCode),
+              updatedAt: new Date().toLocaleString(),
+            },
+      ),
+    );
+  }
+
   function openPlantFromLogPage(plantId) {
+    setDriverLogEditRequest(null);
     setSelectedPlantId(plantId);
     setPage("cockpit");
+  }
+
+  function openDriverLogEdit(logId) {
+    const targetEntry = driverLogs.find((entry) => entry.id === logId);
+    if (!targetEntry) return;
+
+    const plantId = Number(targetEntry.plantId);
+    const plant = data.plants.find((item) => item.id === plantId) ?? null;
+    const location = plant ? driverLogLocationForPlant(plant) : cleanText(targetEntry.location) || `Plant ${plantId}`;
+
+    setDriverLogDraft(createDriverLogDraft(plantId, location));
+    setDriverLogEditRequest({
+      logId,
+      requestedAt: Date.now(),
+    });
+    setPage("drivers");
   }
 
   const draftPlant =
@@ -1896,8 +3670,21 @@ export default function DispatchCockpitLive() {
                   Material Usage
                 </CliButton>
                 <CliButton
+                  active={page === "source_allocations"}
+                  onClick={() => setPage("source_allocations")}
+                >
+                  Source Allocations
+                </CliButton>
+                <CliButton active={page === "exceptions"} onClick={() => setPage("exceptions")}>
+                  Exceptions{dispatchExceptions.length > 0 ? ` (${dispatchExceptions.length})` : ""}
+                </CliButton>
+                <CliButton active={page === "shift_summary"} onClick={() => setPage("shift_summary")}>
+                  End of Shift
+                </CliButton>
+                <CliButton
                   active={page === "drivers"}
                   onClick={() => {
+                    setDriverLogEditRequest(null);
                     setDriverLogDraft(createDriverLogDraft(null));
                     setPage("drivers");
                   }}
@@ -1922,39 +3709,38 @@ export default function DispatchCockpitLive() {
                   <span className="font-semibold text-white">
                     {formatNumber(data.summary.totalYardage, 1)}
                   </span>
+                  <div className="mt-1">
+                    <span className="text-white/50">Delivered </span>
+                    <span className="font-semibold text-white">
+                      {formatNumber(DELIVERED_YARDAGE, 0)}
+                    </span>
+                  </div>
                 </div>
               </div>
 
               <div className="border border-white/15 px-3 py-2 text-sm text-white/80">
                 <div>
-                  <span className="text-white/50">Risk plants </span>
-                  <span className="font-semibold text-white">{riskPlantCount}</span>
+                  <span className="text-white/50">Material Usage [Live]</span>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {riskPlants.length > 0 ? (
-                    riskPlants.map((plant) => (
-                      <div
-                        key={plant.id}
-                        className="inline-flex items-center gap-1 border border-white/25 px-2 py-1 text-[12px]"
-                      >
-                        <span>{plant.id}</span>
-                        {plant.cementRisk ? (
-                          <span className="font-semibold text-rose-400">C</span>
-                        ) : null}
-                        {plant.flyashRisk ? (
-                          <span className="font-semibold text-rose-400">F</span>
-                        ) : null}
-                      </div>
-                    ))
-                  ) : (
-                    <span className="text-white/45">none</span>
-                  )}
+                <div className="mt-2 flex flex-wrap gap-4 text-sm">
+                  <div>
+                    <span className="text-white/50">Cement </span>
+                    <span className="font-semibold text-white">
+                      {LIVE_HEADER_USAGE.cement.used} / {LIVE_HEADER_USAGE.cement.total}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-white/50">Fly-ash </span>
+                    <span className="font-semibold text-white">
+                      {LIVE_HEADER_USAGE.flyash.used} / {LIVE_HEADER_USAGE.flyash.total}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <div className="border border-white/15 px-3 py-2 text-sm text-white/65">
               Updated {new Date(data.meta?.generatedAt ?? Date.now()).toLocaleString()}
             </div>
@@ -1968,9 +3754,9 @@ export default function DispatchCockpitLive() {
         ) : null}
 
         {page === "cockpit" ? (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             <PlantRibbon
-              filteredPlants={filteredPlants}
+              filteredPlants={sortedPlants}
               selectedPlant={selectedPlant}
               setSelectedPlantId={setSelectedPlantId}
               activeOnly={activeOnly}
@@ -1979,11 +3765,16 @@ export default function DispatchCockpitLive() {
               setSearch={setSearch}
               selectedRegion={selectedRegion}
               setSelectedRegion={setSelectedRegion}
+              plantSort={plantSort}
+              setPlantSort={setPlantSort}
             />
             {selectedPlant ? (
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
                 <PlantDetailsPanel
                   plant={selectedPlant}
+                  drivers={drivers}
+                  driverLogs={driverLogs}
+                  sourceRules={sourceRules}
                   onClose={() => setSelectedPlantId(null)}
                   onOpenDriverLogPage={openDriverLogForPlant}
                 />
@@ -1992,6 +3783,7 @@ export default function DispatchCockpitLive() {
                   driverLogs={driverLogs}
                   driverLogDraft={driverLogDraft}
                   driverOptions={driverOptions}
+                  sourceRules={sourceRules}
                   onDraftChange={updateDriverLogDraft}
                   onSaveDriverLog={saveDriverLog}
                 />
@@ -2009,6 +3801,9 @@ export default function DispatchCockpitLive() {
             selectedPlantId={selectedPlantId}
             setSelectedPlantId={setSelectedPlantId}
             selectedPlant={selectedPlant}
+            drivers={drivers}
+            driverLogs={driverLogs}
+            sourceRules={sourceRules}
             onOpenDriverLogPage={openDriverLogForPlant}
             onClosePlant={() => setSelectedPlantId(null)}
           />
@@ -2016,22 +3811,39 @@ export default function DispatchCockpitLive() {
           <PlantTotalsSection
             isOpen={showPlantTotals}
             onToggle={() => setShowPlantTotals((current) => !current)}
-            rows={filteredPlants}
+            rows={sortedPlants}
           />
         ) : page === "material_usage" ? (
-          <MaterialUsageSection rows={filteredPlants} />
+          <MaterialUsageSection rows={sortedPlants} />
+        ) : page === "source_allocations" ? (
+          <SourceAllocationsPage />
+        ) : page === "exceptions" ? (
+          <ExceptionsPage
+            exceptions={dispatchExceptions}
+            onOpenPlant={openPlantFromLogPage}
+            onEditLog={openDriverLogEdit}
+          />
+        ) : page === "shift_summary" ? (
+          <EndOfShiftSummaryPage
+            data={data}
+            drivers={drivers}
+            driverLogs={driverLogs}
+            exceptions={dispatchExceptions}
+            onOpenPlant={openPlantFromLogPage}
+            onEditLog={openDriverLogEdit}
+          />
         ) : page === "drivers" ? (
           <DriversPage
             drivers={drivers}
-            showDriverStatus={showDriverStatus}
-            onToggleDriverStatus={() => setShowDriverStatus((current) => !current)}
+            plants={data.plants}
             plant={draftPlant}
             draft={driverLogDraft}
-            driverOptions={driverOptions}
-            onDraftChange={updateDriverLogDraft}
-            onSave={saveDriverLog}
             logs={driverLogs}
+            driverOptions={driverOptions}
+            sourceRules={sourceRules}
             onOpenPlant={openPlantFromLogPage}
+            onUpdateLog={updateSavedDriverLog}
+            editRequest={driverLogEditRequest}
           />
         ) : page === "notes" ? (
           <NotesPage />
