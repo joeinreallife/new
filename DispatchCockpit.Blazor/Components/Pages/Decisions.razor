@@ -1,0 +1,155 @@
+@page "/decisions"
+@implements IDisposable
+@inject DispatchStateService Store
+@inject NavigationManager Navigation
+
+<PageTitle>Act Now / Watch Next</PageTitle>
+
+<div class="split-layout">
+    <div class="stack">
+        <div class="panel">
+            <div class="section-header">
+                <div class="section-title">Act now</div>
+                <div class="tiny-meta">@actNow.Count plants</div>
+            </div>
+            <div class="decision-grid">
+                @foreach (var item in actNow)
+                {
+                    <DecisionCard Item="item" OnSelect="SelectPlant" />
+                }
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="section-header">
+                <div class="section-title">Watch next</div>
+                <div class="tiny-meta">@watchNext.Count plants</div>
+            </div>
+            <div class="decision-grid">
+                @foreach (var item in watchNext)
+                {
+                    <DecisionCard Item="item" OnSelect="SelectPlant" />
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="panel sticky-panel">
+        @if (selectedPlant is null)
+        {
+            <div class="empty-state">Choose a plant from Act now or Watch next.</div>
+        }
+        else
+        {
+            var decision = Store.BuildDecision(selectedPlant);
+            var queue = Store.GetInboundQueue(selectedPlant).ToList();
+            <div class="section-header">
+                <div>
+                    <div class="section-title">Plant @selectedPlant.Id</div>
+                    <div class="tiny-meta">@Store.FormatRegionLabel(selectedPlant.Region)</div>
+                </div>
+                <div class="button-row">
+                    <button type="button" class="secondary-button" @onclick="OpenOnMain">Open on MAIN</button>
+                    <button type="button" class="secondary-button" @onclick="ClearPlant">Close</button>
+                </div>
+            </div>
+
+            @if (decision is not null)
+            {
+                <div class="panel subtle-panel">
+                    <div class="decision-title">@decision.ActionLabel</div>
+                    <div class="body-copy">@decision.Reason</div>
+                    <div class="sub-copy">@decision.Support</div>
+                </div>
+            }
+
+            <div class="metric-grid four-up">
+                <MetricCard Label="Start time" Value="@Store.GetPlantStartTime(selectedPlant)" />
+                <MetricCard Label="Yardage" Value="@DispatchStateService.FormatNumber(selectedPlant.Yardage, 1)" />
+                <MetricCard Label="Next ETA" Value="@($"{selectedPlant.NextEtaMinutes} min")" />
+                <MetricCard Label="Coverage" Value="@($"{selectedPlant.CoverageMinutes} min")" />
+            </div>
+
+            <div class="section-header">
+                <div class="section-title">Inbound queue</div>
+            </div>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Truck</th>
+                            <th>Driver</th>
+                            <th>Source</th>
+                            <th>ETA</th>
+                            <th>Material</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in queue)
+                        {
+                            <tr>
+                                <td>@item.Truck</td>
+                                <td>@item.Driver</td>
+                                <td>@item.Source</td>
+                                <td>@item.Eta</td>
+                                <td>@item.Material</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<DecisionItem> actNow = [];
+    private List<DecisionItem> watchNext = [];
+    private PlantRecord? selectedPlant;
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += HandleStoreChanged;
+        Refresh();
+    }
+
+    private Task SelectPlant(int plantId)
+    {
+        selectedPlant = Store.GetPlant(plantId);
+        return Task.CompletedTask;
+    }
+
+    private Task ClearPlant()
+    {
+        selectedPlant = null;
+        return Task.CompletedTask;
+    }
+
+    private void OpenOnMain()
+    {
+        if (selectedPlant is null)
+        {
+            return;
+        }
+
+        Navigation.NavigateTo($"/?plantId={selectedPlant.Id}");
+    }
+
+    private void Refresh()
+    {
+        var plants = Store.GetPlants(true, string.Empty, "all", "urgency").ToList();
+        actNow = Store.GetActNowDecisions(plants).ToList();
+        watchNext = Store.GetWatchDecisions(plants).ToList();
+    }
+
+    private void HandleStoreChanged()
+    {
+        Refresh();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Store.Changed -= HandleStoreChanged;
+    }
+}

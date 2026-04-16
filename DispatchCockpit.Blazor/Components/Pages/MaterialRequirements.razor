@@ -1,0 +1,38 @@
+@page "/materials"
+@inject DispatchStateService Store
+
+<PageTitle>Material Requirements</PageTitle>
+
+<div class="panel">
+    <div class="section-header">
+        <div class="section-title">Material Requirements</div>
+        <div class="tiny-meta">@Store.ActivePlantCount active plants</div>
+    </div>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Plant</th>
+                    <th>Yardage</th>
+                    <th>Cement diff</th>
+                    <th>Fly-ash diff</th>
+                    <th>PLC diff</th>
+                    <th>LC3 diff</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var plant in Store.GetPlants(false, string.Empty, "all", "plant_id"))
+                {
+                    <tr>
+                        <td>@plant.Id</td>
+                        <td>@DispatchStateService.FormatNumber(plant.Yardage, 1)</td>
+                        <td>@DispatchStateService.FormatDiff(plant.Materials.GetValueOrDefault("cement")?.Diff)</td>
+                        <td>@DispatchStateService.FormatDiff(plant.Materials.GetValueOrDefault("flyash")?.Diff)</td>
+                        <td>@DispatchStateService.FormatDiff(plant.Materials.GetValueOrDefault("plc")?.Diff)</td>
+                        <td>@DispatchStateService.FormatDiff(plant.Materials.GetValueOrDefault("lc3")?.Diff)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

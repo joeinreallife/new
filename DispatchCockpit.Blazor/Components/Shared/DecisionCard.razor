@@ -1,0 +1,25 @@
+<button type="button" class="decision-card @Item.Severity" @onclick="() => OnSelect.InvokeAsync(Item.PlantId)">
+    <div class="tile-row">
+        <div class="section-title">Plant @Item.PlantId</div>
+        <div class="pill">@BadgeLabel</div>
+    </div>
+    <div class="decision-title">@Item.ActionLabel</div>
+    <div class="body-copy">@Item.Reason</div>
+    <div class="sub-copy">@Item.Support</div>
+</button>
+
+@code {
+    [Parameter, EditorRequired]
+    public DecisionItem Item { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public EventCallback<int> OnSelect { get; set; }
+
+    private string BadgeLabel => Item.Mode switch
+    {
+        "act_now" when Item.Severity == "critical" => "Act now",
+        "act_now" => "Attention",
+        "watch" when Item.Severity == "tight" => "Tight",
+        _ => "Watch",
+    };
+}

@@ -1,0 +1,93 @@
+<EditForm Model="Draft" OnValidSubmit="HandleSave">
+    <div class="form-grid">
+        <div>
+            <label class="tiny-label">Location</label>
+            <InputText class="text-input" @bind-Value="Draft.Location" disabled="@LockLocation" />
+        </div>
+        <div>
+            <label class="tiny-label">Truck #</label>
+            <InputSelect class="text-input" @bind-Value="Draft.TruckNumber">
+                <option value="">Select truck</option>
+                @foreach (var truck in TruckOptions)
+                {
+                    <option value="@truck">@truck</option>
+                }
+            </InputSelect>
+        </div>
+        <div>
+            <label class="tiny-label">Driver</label>
+            <InputSelect class="text-input" @bind-Value="Draft.Driver">
+                <option value="">Select driver</option>
+                @foreach (var driver in DriverOptions)
+                {
+                    <option value="@driver">@driver</option>
+                }
+            </InputSelect>
+        </div>
+        <div>
+            <label class="tiny-label">Source</label>
+            <InputSelect class="text-input" @bind-Value="Draft.Source">
+                <option value="">Select source</option>
+                @foreach (var source in SourceOptions)
+                {
+                    <option value="@source">@source</option>
+                }
+            </InputSelect>
+        </div>
+        <div>
+            <label class="tiny-label">INV code</label>
+            <InputSelect class="text-input" @bind-Value="Draft.InvCode">
+                <option value="">Select INV</option>
+                @foreach (var inv in InvOptions)
+                {
+                    <option value="@inv">@inv</option>
+                }
+            </InputSelect>
+        </div>
+    </div>
+
+    <div class="button-row">
+        <button type="submit" class="action-button" disabled="@SaveDisabled">@SaveLabel</button>
+        @if (ShowCancel)
+        {
+            <button type="button" class="secondary-button" @onclick="() => OnCancel.InvokeAsync()">Cancel</button>
+        }
+    </div>
+</EditForm>
+
+@code {
+    [Parameter, EditorRequired]
+    public DriverLogDraft Draft { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<string> TruckOptions { get; set; } = Array.Empty<string>();
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<string> DriverOptions { get; set; } = Array.Empty<string>();
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<string> SourceOptions { get; set; } = Array.Empty<string>();
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<string> InvOptions { get; set; } = Array.Empty<string>();
+
+    [Parameter, EditorRequired]
+    public EventCallback OnSave { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    [Parameter]
+    public bool LockLocation { get; set; }
+
+    [Parameter]
+    public bool SaveDisabled { get; set; }
+
+    [Parameter]
+    public bool ShowCancel { get; set; }
+
+    [Parameter]
+    public string SaveLabel { get; set; } = "Save";
+
+    private Task HandleSave() => OnSave.InvokeAsync();
+}

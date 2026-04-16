@@ -1,0 +1,103 @@
+<div class="stack">
+    @if (!Logs.Any())
+    {
+        <div class="empty-state">@EmptyLabel</div>
+    }
+    else
+    {
+        @foreach (var entry in Logs)
+        {
+            var isEditing = EditingLogId == entry.Id;
+            <div class="panel">
+                <div class="tile-row">
+                    <div class="section-title">
+                        @if (ShowPlant)
+                        {
+                            <span>Plant @entry.PlantId :: </span>
+                        }
+                        @entry.Driver
+                    </div>
+                    <div class="button-row">
+                        @if (OnEdit.HasDelegate)
+                        {
+                            if (isEditing)
+                            {
+                                <button type="button" class="secondary-button" @onclick="() => OnCancel.InvokeAsync()">Cancel</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="secondary-button" @onclick="() => OnEdit.InvokeAsync(entry.Id)">Edit</button>
+                            }
+                        }
+                        <span class="tiny-meta">@(!string.IsNullOrWhiteSpace(entry.UpdatedAt) ? $"updated {entry.UpdatedAt}" : entry.SavedAt)</span>
+                    </div>
+                </div>
+
+                @if (isEditing && EditDraft is not null)
+                {
+                    <DriverLogForm Draft="EditDraft"
+                                   TruckOptions="TruckOptions"
+                                   DriverOptions="DriverOptions"
+                                   SourceOptions="SourceOptions"
+                                   InvOptions="InvOptions"
+                                   OnSave="OnSaveEdit"
+                                   OnCancel="OnCancel"
+                                   SaveDisabled="@SaveDisabled"
+                                   SaveLabel="Save changes"
+                                   ShowCancel="true" />
+                }
+                else
+                {
+                    <div class="mini-grid">
+                        <div>Location @entry.Location</div>
+                        <div>Truck @entry.TruckNumber</div>
+                        <div>Driver @entry.Driver</div>
+                        <div>Source @entry.Source</div>
+                        <div>INV @entry.InvCode</div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IEnumerable<DriverLogEntry> Logs { get; set; } = Array.Empty<DriverLogEntry>();
+
+    [Parameter]
+    public string EmptyLabel { get; set; } = "No saved logs.";
+
+    [Parameter]
+    public bool ShowPlant { get; set; } = true;
+
+    [Parameter]
+    public string? EditingLogId { get; set; }
+
+    [Parameter]
+    public DriverLogDraft? EditDraft { get; set; }
+
+    [Parameter]
+    public IReadOnlyList<string> TruckOptions { get; set; } = Array.Empty<string>();
+
+    [Parameter]
+    public IReadOnlyList<string> DriverOptions { get; set; } = Array.Empty<string>();
+
+    [Parameter]
+    public IReadOnlyList<string> SourceOptions { get; set; } = Array.Empty<string>();
+
+    [Parameter]
+    public IReadOnlyList<string> InvOptions { get; set; } = Array.Empty<string>();
+
+    [Parameter]
+    public bool SaveDisabled { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnEdit { get; set; }
+
+    [Parameter]
+    public EventCallback OnSaveEdit { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+}

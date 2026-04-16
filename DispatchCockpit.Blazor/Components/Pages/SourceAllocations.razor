@@ -1,0 +1,42 @@
+@page "/sources"
+@inject DispatchStateService Store
+
+<PageTitle>Source Allocations</PageTitle>
+
+@foreach (var materialKey in new[] { "cement", "flyash" })
+{
+    var rows = Store.GetSourceAllocations(materialKey).ToList();
+    <div class="panel">
+        <div class="section-header">
+            <div class="section-title">@Store.FormatRegionLabel(materialKey == "flyash" ? "fly-ash" : "cement") sources</div>
+            <div class="tiny-meta">@rows.Count sources</div>
+        </div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Source</th>
+                        <th>Allocation</th>
+                        <th>Day</th>
+                        <th>Night</th>
+                        <th>Picked up</th>
+                        <th>Left</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in rows)
+                    {
+                        <tr>
+                            <td>@row.Code</td>
+                            <td>@row.Allocation</td>
+                            <td>@row.DayPicked</td>
+                            <td>@row.NightPicked</td>
+                            <td>@row.PickedUp</td>
+                            <td>@row.Left</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}

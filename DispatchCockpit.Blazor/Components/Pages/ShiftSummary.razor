@@ -1,0 +1,92 @@
+@page "/shift-summary"
+@implements IDisposable
+@inject DispatchStateService Store
+@inject NavigationManager Navigation
+
+<PageTitle>End of Shift</PageTitle>
+
+<div class="stack">
+    <div class="metric-grid six-up">
+        <MetricCard Label="Active plants" Value="@Store.ActivePlantCount.ToString()" />
+        <MetricCard Label="Total yardage" Value="@DispatchStateService.FormatNumber(Store.TotalYardage, 1)" />
+        <MetricCard Label="Delivered" Value="@Store.DeliveredYardage.ToString("N0")" />
+        <MetricCard Label="Drivers" Value="@Store.UniqueLoggedDrivers.ToString()" />
+        <MetricCard Label="Trucks" Value="@Store.UniqueLoggedTrucks.ToString()" />
+        <MetricCard Label="Open exceptions" Value="@exceptions.Count.ToString()" />
+    </div>
+
+    <div class="split-layout">
+        <div class="stack">
+            <div class="panel">
+                <div class="section-header">
+                    <div class="section-title">Material pickup summary</div>
+                </div>
+                <div class="metric-grid four-up">
+                    <MetricCard Label="Cement picked up" Value="@Store.GetSourceAllocations("cement").Sum(item => item.PickedUp).ToString()" />
+                    <MetricCard Label="Cement left" Value="@Store.GetSourceAllocations("cement").Sum(item => item.Left).ToString()" />
+                    <MetricCard Label="Fly-ash picked up" Value="@Store.GetSourceAllocations("flyash").Sum(item => item.PickedUp).ToString()" />
+                    <MetricCard Label="Fly-ash left" Value="@Store.GetSourceAllocations("flyash").Sum(item => item.Left).ToString()" />
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="section-header">
+                    <div class="section-title">Exceptions snapshot</div>
+                </div>
+                @foreach (var item in exceptions.Take(5))
+                {
+                    <div class="panel subtle-panel">
+                        <div class="tile-row">
+                            <div class="section-title">@item.Title</div>
+                            @if (item.PlantId is not null)
+                            {
+                                <button type="button" class="secondary-button" @onclick='@(() => Navigation.NavigateTo($"/?plantId={item.PlantId}"))'>Open plant</button>
+                            }
+                        </div>
+                        <div class="body-copy">@item.Detail</div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="panel sticky-panel">
+            <div class="section-header">
+                <div class="section-title">NOTES:</div>
+            </div>
+            <InputTextArea class="notes-box" @bind-Value="shiftNotes" @bind-Value:after="SaveNotes" />
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<DispatchExceptionItem> exceptions = [];
+    private string shiftNotes = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += HandleStoreChanged;
+        Refresh();
+    }
+
+    private void SaveNotes()
+    {
+        Store.SetShiftNotes(shiftNotes);
+    }
+
+    private void Refresh()
+    {
+        exceptions = Store.GetExceptions().ToList();
+        shiftNotes = Store.ShiftNotes;
+    }
+
+    private void HandleStoreChanged()
+    {
+        Refresh();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Store.Changed -= HandleStoreChanged;
+    }
+}

@@ -1,0 +1,61 @@
+@inject DispatchStateService Store
+
+<button type="button" class="plant-tile @(Selected ? "selected" : string.Empty)" @onclick="() => OnSelect.InvokeAsync(Plant.Id)">
+    <div class="tile-row">
+        <div>
+            <div class="tiny-label">Plant @Plant.Id</div>
+            <div class="tiny-meta">Start time @Store.GetPlantStartTime(Plant)</div>
+        </div>
+        <div class="yardage-block">
+            <div class="tiny-label">Yardage</div>
+            <div class="yardage-value">@DispatchStateService.FormatNumber(Plant.Yardage, 1)</div>
+        </div>
+    </div>
+
+    <div class="tile-section">
+        <div class="tiny-label">Material usage [Live]</div>
+        @foreach (var slot in Plant.Materials.Values.Where(slot => slot.Diff.HasValue || slot.OnHand.HasValue))
+        {
+            <div class="tile-line">@slot.Label: @DispatchStateService.FormatNumber(slot.UsageLive, 2)</div>
+        }
+    </div>
+
+    <div class="tile-section">
+        <div class="tiny-label">Inbound [Live]</div>
+        <div class="tile-line">Trucks: @Plant.InboundTrucks</div>
+        <div class="tile-line">Next ETA: @Plant.NextEtaMinutes min</div>
+        <div class="tile-line">Coverage: @Plant.CoverageMinutes min</div>
+        @if (Plant.AdditionalTrucksNeeded > 0)
+        {
+            <div class="warning-text">Need @Plant.AdditionalTrucksNeeded more trucks</div>
+        }
+    </div>
+
+    <div class="tile-flags">
+        @{
+            var flags = Store.GetRiskFlags(Plant).ToList();
+        }
+        @if (flags.Count == 0)
+        {
+            <span class="ok-text">Stable</span>
+        }
+        else
+        {
+            @foreach (var flag in flags)
+            {
+                <span class="risk-chip">@flag</span>
+            }
+        }
+    </div>
+</button>
+
+@code {
+    [Parameter, EditorRequired]
+    public PlantRecord Plant { get; set; } = default!;
+
+    [Parameter]
+    public bool Selected { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<int> OnSelect { get; set; }
+}

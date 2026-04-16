@@ -1,0 +1,199 @@
+@page "/drivers"
+@using System.Globalization
+@implements IDisposable
+@inject DispatchStateService Store
+@inject NavigationManager Navigation
+
+<PageTitle>Drivers</PageTitle>
+
+<div class="split-layout">
+    <div class="stack">
+        <div class="panel">
+            <div class="toolbar">
+                <div class="toolbar-item wide">
+                    <label class="tiny-label">Search driver, truck, location, or plant</label>
+                    <InputText class="text-input" @bind-Value="search" />
+                </div>
+            </div>
+        </div>
+
+        @foreach (var shift in new[] { "day", "night" })
+        {
+            var shiftDrivers = FilteredDrivers.Where(driver => Store.GetDriverShift(driver) == shift).ToList();
+            <div class="panel">
+                <div class="section-header">
+                    <div class="section-title">@CultureInfo.CurrentCulture.TextInfo.ToTitleCase(shift) shift</div>
+                    <div class="tiny-meta">@shiftDrivers.Count drivers</div>
+                </div>
+
+                <div class="stack">
+                    @foreach (var group in Store.GetGroups())
+                    {
+                        var groupDrivers = shiftDrivers.Where(driver => Store.GetDriverGroup(driver) == group).ToList();
+                        <details>
+                            <summary>@Store.GetGroupLabel(group) (@groupDrivers.Count)</summary>
+                            <div class="stack">
+                                @if (groupDrivers.Count == 0)
+                                {
+                                    <div class="empty-state">No drivers in this group.</div>
+                                }
+                                else
+                                {
+                                    @foreach (var driver in groupDrivers)
+                                    {
+                                        <button type="button" class="driver-card @(selectedDriverName == driver.Name ? "selected" : string.Empty)" @onclick="() => SelectDriver(driver.Name)">
+                                            <div class="tile-row">
+                                                <div class="section-title">@driver.Name</div>
+                                                <div class="tiny-meta">truck @driver.AssignedTruck</div>
+                                            </div>
+                                            <div class="body-copy">@driver.Location</div>
+                                            <div class="sub-copy">@driver.Status @(!string.IsNullOrWhiteSpace(driver.DriverCode) ? $"| code {driver.DriverCode}" : string.Empty)</div>
+                                        </button>
+                                    }
+                                }
+                            </div>
+                        </details>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="panel sticky-panel">
+        <div class="section-header">
+            <div>
+                <div class="section-title">@LogTitle</div>
+                <div class="tiny-meta">@Logs.Count saved logs</div>
+            </div>
+            @if (editingPlant is not null)
+            {
+                <button type="button" class="secondary-button" @onclick='@(() => Navigation.NavigateTo($"/?plantId={editingPlant.Id}"))'>Open plant @editingPlant.Id</button>
+            }
+        </div>
+
+        <DriverLogList Logs="Logs"
+                       EmptyLabel="Select a driver on the left."
+                       EditingLogId="editingLogId"
+                       EditDraft="editDraft"
+                       TruckOptions="Store.TruckNumbers"
+                       DriverOptions="Store.DriverNames"
+                       SourceOptions="editSourceOptions"
+                       InvOptions="Store.InvCodes"
+                       SaveDisabled="@(!HasEditContent())"
+                       OnEdit="BeginEdit"
+                       OnSaveEdit="SaveEdit"
+                       OnCancel="CancelEdit" />
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? EditLogId { get; set; }
+
+    private string search = string.Empty;
+    private string? selectedDriverName;
+    private string? editingLogId;
+    private DriverLogDraft? editDraft;
+
+    private List<DriverRecord> FilteredDrivers => Store.GetDrivers(search).ToList();
+
+    private List<DriverLogEntry> Logs =>
+        !string.IsNullOrWhiteSpace(selectedDriverName)
+            ? Store.GetLogsForDriver(selectedDriverName).ToList()
+            : editingPlant is not null
+                ? Store.GetLogsForPlant(editingPlant.Id).ToList()
+                : [];
+
+    private PlantRecord? editingPlant => Store.GetPlant(editDraft?.PlantId);
+
+    private IReadOnlyList<string> editSourceOptions =>
+        editingPlant is null
+            ? Store.GetSourceAllocations("cement").Select(item => item.Code).Concat(Store.GetSourceAllocations("flyash").Select(item => item.Code)).ToList()
+            : Store.GetAllowedSources(editingPlant, "cement").Concat(Store.GetAllowedSources(editingPlant, "flyash")).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    private string LogTitle =>
+        !string.IsNullOrWhiteSpace(selectedDriverName)
+            ? $"Driver log :: {selectedDriverName}"
+            : editingPlant is not null
+                ? $"Driver log :: Plant {editingPlant.Id}"
+                : "Driver log";
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += HandleStoreChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (string.IsNullOrWhiteSpace(EditLogId))
+        {
+            return;
+        }
+
+        var log = Store.FindLog(EditLogId);
+        if (log is null)
+        {
+            return;
+        }
+
+        selectedDriverName = log.Driver;
+        editingLogId = log.Id;
+        editDraft = Store.CreateDraftFromLog(log);
+    }
+
+    private Task SelectDriver(string driverName)
+    {
+        selectedDriverName = driverName;
+        editingLogId = null;
+        editDraft = null;
+        return Task.CompletedTask;
+    }
+
+    private Task BeginEdit(string logId)
+    {
+        var log = Store.FindLog(logId);
+        if (log is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        editingLogId = log.Id;
+        editDraft = Store.CreateDraftFromLog(log);
+        selectedDriverName = log.Driver;
+        return Task.CompletedTask;
+    }
+
+    private Task SaveEdit()
+    {
+        if (editingLogId is null || editDraft is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        Store.UpdateDriverLog(editingLogId, editDraft);
+        editingLogId = null;
+        editDraft = null;
+        return Task.CompletedTask;
+    }
+
+    private Task CancelEdit()
+    {
+        editingLogId = null;
+        editDraft = null;
+        return Task.CompletedTask;
+    }
+
+    private bool HasEditContent() =>
+        editDraft is not null &&
+        (!string.IsNullOrWhiteSpace(editDraft.TruckNumber) ||
+         !string.IsNullOrWhiteSpace(editDraft.Driver) ||
+         !string.IsNullOrWhiteSpace(editDraft.Source) ||
+         !string.IsNullOrWhiteSpace(editDraft.InvCode));
+
+    private void HandleStoreChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Store.Changed -= HandleStoreChanged;
+    }
+}

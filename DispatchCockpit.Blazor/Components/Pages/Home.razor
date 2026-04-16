@@ -1,0 +1,262 @@
+@page "/"
+@implements IDisposable
+@inject DispatchStateService Store
+@inject NavigationManager Navigation
+
+<PageTitle>MAIN</PageTitle>
+
+<div class="stack">
+    <div class="panel">
+        <div class="metric-grid">
+            <MetricCard Label="Active plants" Value="@Store.ActivePlantCount.ToString()" />
+            <MetricCard Label="Total yardage" Value="@DispatchStateService.FormatNumber(Store.TotalYardage, 1)" />
+            <MetricCard Label="Delivered" Value="@Store.DeliveredYardage.ToString("N0")" />
+            <MetricCard Label="Material usage [Live]" Value="@($"Cement {Store.CementUsageHeader.Used} / {Store.CementUsageHeader.Total} | Fly-ash {Store.FlyAshUsageHeader.Used} / {Store.FlyAshUsageHeader.Total}")" />
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="toolbar">
+            <label class="checkbox-label">
+                <InputCheckbox @bind-Value="activeOnly" />
+                <span>Active plants only</span>
+            </label>
+
+            <div class="toolbar-item">
+                <label class="tiny-label">Search plant ID</label>
+                <InputText class="text-input" @bind-Value="search" />
+            </div>
+
+            <div class="toolbar-item">
+                <label class="tiny-label">Area</label>
+                <InputSelect class="text-input" @bind-Value="region">
+                    @foreach (var item in Store.Regions)
+                    {
+                        <option value="@item">@Store.FormatRegionLabel(item)</option>
+                    }
+                </InputSelect>
+            </div>
+
+            <div class="toolbar-item">
+                <label class="tiny-label">Sort</label>
+                <InputSelect class="text-input" @bind-Value="sortKey">
+                    <option value="plant_id">Plant ID</option>
+                    <option value="urgency">Urgency</option>
+                    <option value="start_time">Start time</option>
+                    <option value="area">Area</option>
+                </InputSelect>
+            </div>
+        </div>
+    </div>
+
+    <div class="tile-grid">
+        @foreach (var plant in Plants)
+        {
+            <PlantTile Plant="plant" Selected="@(selectedPlant?.Id == plant.Id)" OnSelect="SelectPlant" />
+        }
+    </div>
+
+    @if (selectedPlant is not null)
+    {
+        var decision = Store.BuildDecision(selectedPlant);
+        var queue = Store.GetInboundQueue(selectedPlant).ToList();
+        var plantLogs = Store.GetLogsForPlant(selectedPlant.Id).ToList();
+        <div class="split-layout">
+            <div class="panel sticky-panel">
+                <div class="section-header">
+                    <div>
+                        <div class="section-title">Plant @selectedPlant.Id</div>
+                        <div class="tiny-meta">@Store.FormatRegionLabel(selectedPlant.Region)</div>
+                    </div>
+                    <button type="button" class="secondary-button" @onclick="ClosePlant">Close</button>
+                </div>
+
+                @if (decision is not null)
+                {
+                    <div class="panel subtle-panel">
+                        <div class="tiny-label">Recommended action</div>
+                        <div class="decision-title">@decision.ActionLabel</div>
+                        <div class="body-copy">@decision.Reason</div>
+                        <div class="sub-copy">@decision.Support</div>
+
+                        <div class="metric-grid four-up">
+                            <MetricCard Label="Recommended source" Value="@(decision.SourceRecommendation.BestSource ?? "Blocked")" />
+                            <MetricCard Label="Allocation left" Value="@(decision.SourceRecommendation.BestSource is null ? "-" : decision.SourceRecommendation.AllocationLeft.ToString())" />
+                            <MetricCard Label="Backup source" Value="@(decision.SourceRecommendation.BackupSource ?? "-")" />
+                            <MetricCard Label="Valid sources" Value="@decision.SourceRecommendation.ValidSourceCount.ToString()" />
+                        </div>
+                    </div>
+                }
+
+                <div class="metric-grid four-up">
+                    <MetricCard Label="Start time" Value="@Store.GetPlantStartTime(selectedPlant)" />
+                    <MetricCard Label="Yardage" Value="@DispatchStateService.FormatNumber(selectedPlant.Yardage, 1)" />
+                    <MetricCard Label="Inbound trucks" Value="@selectedPlant.InboundTrucks.ToString()" />
+                    <MetricCard Label="Next ETA" Value="@($"{selectedPlant.NextEtaMinutes} min")" />
+                </div>
+
+                <div class="section-header">
+                    <div class="section-title">Inbound queue</div>
+                    <div class="tiny-meta">Dispatch pool @Store.GetGroupLabel(Store.GetPlantDriverGroup(selectedPlant))</div>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Truck</th>
+                                <th>Driver</th>
+                                <th>Source</th>
+                                <th>ETA</th>
+                                <th>Material</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in queue)
+                            {
+                                <tr>
+                                    <td>@item.Truck</td>
+                                    <td>@item.Driver</td>
+                                    <td>@item.Source</td>
+                                    <td>@item.Eta</td>
+                                    <td>@item.Material</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="section-header">
+                    <div class="section-title">Material snapshot</div>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Material</th>
+                                <th>On hand</th>
+                                <th>Loads</th>
+                                <th>Diff</th>
+                                <th>Req</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var slot in selectedPlant.Materials.Values.Where(slot => slot.Diff.HasValue || slot.OnHand.HasValue))
+                            {
+                                <tr>
+                                    <td>@slot.Label</td>
+                                    <td>@DispatchStateService.FormatNumber(slot.OnHand, 2)</td>
+                                    <td>@DispatchStateService.FormatNumber(slot.Loads, 2)</td>
+                                    <td>@DispatchStateService.FormatDiff(slot.Diff)</td>
+                                    <td>@DispatchStateService.FormatNumber(slot.RequiredLoads, 2)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel sticky-panel">
+                <div class="section-header">
+                    <div>
+                        <div class="section-title">Driver log :: Plant @selectedPlant.Id</div>
+                        <div class="tiny-meta">Location Plant @selectedPlant.Id</div>
+                    </div>
+                </div>
+
+                <DriverLogForm Draft="draft"
+                               TruckOptions="Store.TruckNumbers"
+                               DriverOptions="Store.DriverNames"
+                               SourceOptions="sourceOptions"
+                               InvOptions="Store.InvCodes"
+                               OnSave="SaveLog"
+                               LockLocation="true"
+                               SaveDisabled="@(!HasDraftContent())"
+                               SaveLabel="Save log" />
+
+                <div class="section-header">
+                    <div class="section-title">Saved logs</div>
+                    <div class="tiny-meta">@plantLogs.Count saved</div>
+                </div>
+                <DriverLogList Logs="plantLogs"
+                               ShowPlant="false"
+                               EmptyLabel="No saved driver logs for this plant yet."
+                               TruckOptions="Store.TruckNumbers"
+                               DriverOptions="Store.DriverNames"
+                               SourceOptions="sourceOptions"
+                               InvOptions="Store.InvCodes" />
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    public int? PlantId { get; set; }
+
+    private bool activeOnly = true;
+    private string search = string.Empty;
+    private string region = "all";
+    private string sortKey = "plant_id";
+    private PlantRecord? selectedPlant;
+    private DriverLogDraft draft = new();
+
+    private IEnumerable<PlantRecord> Plants => Store.GetPlants(activeOnly, search, region, sortKey);
+
+    private IReadOnlyList<string> sourceOptions =>
+        selectedPlant is null
+            ? Array.Empty<string>()
+            : Store.GetAllowedSources(selectedPlant, "cement")
+                .Concat(Store.GetAllowedSources(selectedPlant, "flyash"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += HandleStoreChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (PlantId is int plantId && selectedPlant?.Id != plantId)
+        {
+            selectedPlant = Store.GetPlant(plantId);
+            draft = Store.CreateDraftForPlant(selectedPlant);
+        }
+    }
+
+    private Task SelectPlant(int plantId)
+    {
+        selectedPlant = Store.GetPlant(plantId);
+        draft = Store.CreateDraftForPlant(selectedPlant);
+        Navigation.NavigateTo($"/?plantId={plantId}", replace: true);
+        return Task.CompletedTask;
+    }
+
+    private Task ClosePlant()
+    {
+        selectedPlant = null;
+        draft = new DriverLogDraft();
+        Navigation.NavigateTo("/", replace: true);
+        return Task.CompletedTask;
+    }
+
+    private Task SaveLog()
+    {
+        Store.AddDriverLog(draft);
+        draft = Store.CreateDraftForPlant(selectedPlant);
+        return Task.CompletedTask;
+    }
+
+    private bool HasDraftContent() =>
+        !string.IsNullOrWhiteSpace(draft.TruckNumber) ||
+        !string.IsNullOrWhiteSpace(draft.Driver) ||
+        !string.IsNullOrWhiteSpace(draft.Source) ||
+        !string.IsNullOrWhiteSpace(draft.InvCode);
+
+    private void HandleStoreChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Store.Changed -= HandleStoreChanged;
+    }
+}

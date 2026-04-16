@@ -1,0 +1,35 @@
+@implements IDisposable
+@inject DispatchStateService Store
+
+<div class="app-header">
+    <div class="brand-block">
+        <div class="brand-title">Robertson's Transport</div>
+        <div class="brand-subtitle">Powder train dispatch | Blazor preview</div>
+    </div>
+
+    <div class="nav-links">
+        <NavLink href="/" Match="NavLinkMatch.All" class="nav-link">MAIN</NavLink>
+        <NavLink href="/decisions" class="nav-link">Act Now / Watch Next</NavLink>
+        <NavLink href="/materials" class="nav-link">Material Requirements</NavLink>
+        <NavLink href="/usage" class="nav-link">Material Usage</NavLink>
+        <NavLink href="/sources" class="nav-link">Source Allocations</NavLink>
+        <NavLink href="/exceptions" class="nav-link">Exceptions (@Store.GetExceptions().Count())</NavLink>
+        <NavLink href="/shift-summary" class="nav-link">End of Shift</NavLink>
+        <NavLink href="/drivers" class="nav-link">Drivers</NavLink>
+        <NavLink href="/notes" class="nav-link">Notes</NavLink>
+    </div>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Store.Changed += HandleStoreChanged;
+    }
+
+    private void HandleStoreChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Store.Changed -= HandleStoreChanged;
+    }
+}

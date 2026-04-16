@@ -1,0 +1,69 @@
+@page "/exceptions"
+@implements IDisposable
+@inject DispatchStateService Store
+@inject NavigationManager Navigation
+
+<PageTitle>Exceptions</PageTitle>
+
+<div class="stack">
+    <div class="metric-grid three-up">
+        <MetricCard Label="Open exceptions" Value="@exceptions.Count.ToString()" />
+        <MetricCard Label="Critical" Value="@exceptions.Count(item => item.Severity == "critical").ToString()" />
+        <MetricCard Label="Attention" Value="@exceptions.Count(item => item.Severity == "attention").ToString()" />
+    </div>
+
+    <div class="stack">
+        @foreach (var item in exceptions)
+        {
+            <div class="panel @(item.Severity == "critical" ? "danger-panel" : "warning-panel")">
+                <div class="section-header">
+                    <div>
+                        <div class="section-title">@item.Title</div>
+                        <div class="tiny-meta">@item.Severity</div>
+                    </div>
+                    <div class="button-row">
+                        @if (!string.IsNullOrWhiteSpace(item.LogId))
+                        {
+                            <button type="button" class="secondary-button" @onclick="() => EditLog(item.LogId!)">@(item.RelatedLogIds.Count > 1 ? "Review logs" : "Edit log")</button>
+                        }
+                        @if (item.PlantId is not null)
+                        {
+                            <button type="button" class="secondary-button" @onclick="() => OpenPlant(item.PlantId.Value)">Open plant</button>
+                        }
+                    </div>
+                </div>
+                <div class="body-copy">@item.Detail</div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<DispatchExceptionItem> exceptions = [];
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += HandleStoreChanged;
+        Refresh();
+    }
+
+    private void OpenPlant(int plantId) => Navigation.NavigateTo($"/?plantId={plantId}");
+
+    private void EditLog(string logId) => Navigation.NavigateTo($"/drivers?editLogId={Uri.EscapeDataString(logId)}");
+
+    private void Refresh()
+    {
+        exceptions = Store.GetExceptions().ToList();
+    }
+
+    private void HandleStoreChanged()
+    {
+        Refresh();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Store.Changed -= HandleStoreChanged;
+    }
+}

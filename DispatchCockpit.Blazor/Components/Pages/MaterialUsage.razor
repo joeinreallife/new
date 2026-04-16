@@ -1,0 +1,36 @@
+@page "/usage"
+@inject DispatchStateService Store
+
+<PageTitle>Material Usage</PageTitle>
+
+<div class="panel">
+    <div class="section-header">
+        <div class="section-title">Material Usage</div>
+        <div class="tiny-meta">Placeholder live feed</div>
+    </div>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Plant</th>
+                    <th>Cement</th>
+                    <th>Fly-ash</th>
+                    <th>PLC</th>
+                    <th>LC3</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var plant in Store.GetPlants(false, string.Empty, "all", "plant_id"))
+                {
+                    <tr>
+                        <td>@plant.Id</td>
+                        <td>@DispatchStateService.FormatNumber(plant.Materials.GetValueOrDefault("cement")?.UsageLive, 2)</td>
+                        <td>@DispatchStateService.FormatNumber(plant.Materials.GetValueOrDefault("flyash")?.UsageLive, 2)</td>
+                        <td>@DispatchStateService.FormatNumber(plant.Materials.GetValueOrDefault("plc")?.UsageLive, 2)</td>
+                        <td>@DispatchStateService.FormatNumber(plant.Materials.GetValueOrDefault("lc3")?.UsageLive, 2)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
