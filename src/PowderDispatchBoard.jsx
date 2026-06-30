@@ -412,7 +412,7 @@ function SelectedPlantMenu({ plant, drivers, tab, setTab, notes, onClose }) {
     ? Math.min(...coverage.map((row) => Number(row.lowestDiff ?? 0)))
     : 0;
   const firstNeedTime = firstNeed(coverage);
-  const totalYards = orders.reduce((sum, order) => sum + Number(order.orderedQuantity ?? 0), 0);
+  const scheduledYards = orders.reduce((sum, order) => sum + Number(order.orderedQuantity ?? 0), 0);
 
   return (
     <section className="pdb-detail-menu">
@@ -446,7 +446,7 @@ function SelectedPlantMenu({ plant, drivers, tab, setTab, notes, onClose }) {
       {tab === "Overview" ? (
         <>
           <div className="pdb-stat-grid">
-            <StatBox label="Tomorrow's Work" value={formatNumber(totalYards)} sub="Total Yards" />
+            <StatBox label="Scheduled Work" value={formatNumber(scheduledYards)} sub="Total Yards" />
             <StatBox
               label="Active Batching"
               value={trucksEnRouteRows[0]?.status?.toUpperCase() ?? "NO LOAD"}
@@ -489,7 +489,7 @@ function SelectedPlantMenu({ plant, drivers, tab, setTab, notes, onClose }) {
               />
             </Panel>
 
-            <Panel title={`Tomorrow's Orders (${orders.length})`}>
+            <Panel title={`Scheduled Orders (${orders.length})`}>
               <DataTable
                 columns={[
                   { key: "mixCode", label: "Mix Code", render: (row) => row.mixCode ?? "--" },
@@ -527,7 +527,7 @@ function PlantDetailPlaceholder({ plant, onReopen }) {
 function TabPanel({ tab, coverage, orders, trucksEnRouteRows, notes }) {
   if (tab === "Orders") {
     return (
-      <Panel title="Orders">
+      <Panel title="Scheduled Orders">
         <DataTable
           columns={[
             { key: "orderNumber", label: "Order" },
