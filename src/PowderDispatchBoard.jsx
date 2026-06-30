@@ -1,19 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
-  Check,
   ClipboardList,
   Database,
   HelpCircle,
   Home,
   Layers,
   Menu,
-  PackageCheck,
   RefreshCcw,
   Settings,
   Truck,
   User,
-  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -208,10 +205,16 @@ function Sidebar() {
   );
 }
 
-function Header({ summary, generatedAt, autoRefresh, onToggleAutoRefresh, onRefresh, onAction }) {
+function Header({ summary, sourceAllocations, generatedAt, autoRefresh, onToggleAutoRefresh, onRefresh }) {
+  const cementAllocationRows = (sourceAllocations ?? []).filter((row) =>
+    String(row.materialDescription ?? "").toUpperCase().includes("CEMENT"),
+  );
+  const usedCementLoads = cementAllocationRows.reduce((sum, row) => sum + Number(row.usedLoads ?? 0), 0);
+  const totalCementLoads = cementAllocationRows.reduce((sum, row) => sum + Number(row.allocatedLoads ?? 0), 0);
+
   return (
     <header className="pdb-header">
-      <div className="pdb-title">POWDER DISPATCH BOARD</div>
+      <div className="pdb-title">DISPATCH</div>
       <TopMetric label="Drivers Available" value={summary.driversAvailable ?? 0} subValue="17%" />
       <TopMetric label="Critical Plants" value={summary.criticalPlants ?? 0} />
       <TopMetric
@@ -236,18 +239,10 @@ function Header({ summary, generatedAt, autoRefresh, onToggleAutoRefresh, onRefr
         <button onClick={onRefresh}>
           <RefreshCcw size={14} /> Refresh
         </button>
-        <button onClick={() => onAction("Log load opened")}>
-          <PackageCheck size={14} /> Log Load
-        </button>
-        <button onClick={() => onAction("Assign driver opened")}>
-          <UserPlus size={14} /> Assign Driver
-        </button>
-        <button onClick={() => onAction("Marked current load as loaded")}>
-          <ClipboardList size={14} /> Mark Loaded
-        </button>
-        <button onClick={() => onAction("Marked current load as delivered")}>
-          <Check size={14} /> Mark Delivered
-        </button>
+        <div className="pdb-cement-usage" aria-label="Cement load usage">
+          <span>Cement Usage</span>
+          <strong>{formatNumber(usedCementLoads)} used of {formatNumber(totalCementLoads)} cement loads</strong>
+        </div>
       </div>
     </header>
   );
@@ -871,13 +866,6 @@ export default function PowderDispatchBoard() {
     void fetchBoard(plantId);
   };
 
-  const handleAction = (message) => {
-    setNotes((current) => [
-      `${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - ${message}`,
-      ...current,
-    ]);
-  };
-
   const handleLoadLogChange = (field, value) => {
     setLoadLogForm((current) => ({ ...current, [field]: value }));
   };
@@ -926,11 +914,11 @@ export default function PowderDispatchBoard() {
       <div className="pdb-main">
         <Header
           summary={board.summary ?? {}}
+          sourceAllocations={board.sourceAllocations ?? []}
           generatedAt={payload?.generatedAt}
           autoRefresh={autoRefresh}
           onToggleAutoRefresh={() => setAutoRefresh((current) => !current)}
           onRefresh={() => void fetchBoard(selectedPlantId)}
-          onAction={handleAction}
         />
 
         {error ? <div className="pdb-error">{error}</div> : null}

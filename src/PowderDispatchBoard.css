@@ -179,6 +179,33 @@ body,
   white-space: nowrap;
 }
 
+.pdb-cement-usage {
+  border: 1px solid #8a8a8a;
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  white-space: normal;
+  color: #f5f5f5;
+}
+
+.pdb-cement-usage span {
+  color: #bdbdbd;
+  text-transform: uppercase;
+  font-size: 9px;
+}
+
+.pdb-cement-usage strong {
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .pdb-carousel-shell {
   position: relative;
   border-bottom: 1px solid #5a5a5a;
