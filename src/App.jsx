@@ -1,8 +1,8 @@
 import "./App.css";
-import DispatchCockpitLive from "./DispatchCockpitLive.jsx";
+import PowderDispatchBoard from "./PowderDispatchBoard.jsx";
 
 function App() {
-  return <DispatchCockpitLive />;
+  return <PowderDispatchBoard />;
 }
 
 export default App;

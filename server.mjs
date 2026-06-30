@@ -2,6 +2,8 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { SOURCE_FILES } from "./src/sourceFiles.js";
@@ -10,6 +12,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distDir = path.join(__dirname, "dist");
 const port = Number(process.env.PORT) || 8787;
+const execFileAsync = promisify(execFile);
+const boardProjectPath = path.join(
+  __dirname,
+  "src",
+  "PowderDispatch.Board",
+  "PowderDispatch.Board.csproj",
+);
+const databasePath = path.join(__dirname, "data", "powder_dispatch_mock.db");
 
 const CONTENT_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -52,6 +62,54 @@ async function serveAllowedSource(response, sourceKey) {
 
     writeJson(response, 500, {
       error: error instanceof Error ? error.message : "Could not read source file.",
+    });
+  }
+}
+
+async function readDispatchBoardData(plantId) {
+  const jsonArgs = ["--json"];
+  if (plantId) {
+    jsonArgs.push("--plantId", plantId);
+  }
+
+  const commonOptions = {
+    cwd: __dirname,
+    env: {
+      ...process.env,
+      POWDER_DISPATCH_DB: databasePath,
+    },
+    maxBuffer: 10 * 1024 * 1024,
+  };
+
+  const runArgs = [
+    "run",
+    "--project",
+    boardProjectPath,
+    "--no-build",
+    "--no-launch-profile",
+    "--",
+    ...jsonArgs,
+  ];
+
+  try {
+    return await execFileAsync("dotnet", runArgs, commonOptions);
+  } catch {
+    return execFileAsync(
+      "dotnet",
+      ["run", "--project", boardProjectPath, "--no-launch-profile", "--", ...jsonArgs],
+      commonOptions,
+    );
+  }
+}
+
+async function serveDispatchBoardData(response, plantId) {
+  try {
+    const { stdout } = await readDispatchBoardData(plantId);
+    writeJson(response, 200, JSON.parse(stdout));
+  } catch (error) {
+    writeJson(response, 500, {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not read dispatch board data.",
     });
   }
 }
@@ -99,6 +157,11 @@ const server = http.createServer(async (request, response) => {
       ok: true,
       sourceKeys: Object.keys(SOURCE_FILES),
     });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/dispatch-board") {
+    await serveDispatchBoardData(response, url.searchParams.get("plantId"));
     return;
   }
 
